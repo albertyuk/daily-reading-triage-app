@@ -18,7 +18,7 @@ Personal daily reading triage and global briefing app.
 - `AUDIT_PROVIDER`: `openai` by default; set `anthropic` for fallback-first runs.
 - `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_TO`, `EMAIL_FROM`: inbound and outbound email.
 - `SITE_PASSWORD`: required in production by middleware; `SITE_USER` defaults to `reader`.
-- `KV_URL`, `KV_REST_API_TOKEN`: switch storage from local JSON to Vercel KV.
+- `KV_REST_API_URL`, `KV_REST_API_TOKEN`: switch storage from local JSON to Vercel KV / Upstash Redis.
 - `CRON_SECRET`: protects cron endpoints.
 
 ## Commands

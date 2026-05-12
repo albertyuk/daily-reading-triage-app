@@ -172,7 +172,7 @@ const kvStorage: StorageAdapter = {
 };
 
 export function getStorage(): StorageAdapter {
-  if (process.env.KV_URL && process.env.KV_REST_API_TOKEN) {
+  if ((process.env.KV_REST_API_URL || process.env.KV_URL) && process.env.KV_REST_API_TOKEN) {
     return kvStorage;
   }
   return localStorage;
