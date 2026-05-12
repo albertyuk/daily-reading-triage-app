@@ -149,7 +149,7 @@ export const auditReportJsonSchema = {
         additionalProperties: false,
         properties: {
           section: { type: "string" },
-          item_id: { type: "string" },
+          item_id: { anyOf: [{ type: "string" }, { type: "null" }] },
           issue: { type: "string" },
           severity: { type: "string", enum: ["fail", "warn"] }
         },

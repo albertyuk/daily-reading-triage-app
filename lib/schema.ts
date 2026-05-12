@@ -88,7 +88,7 @@ export const DigestSchema = z.object({
 
 export const VerificationIssueSchema = z.object({
   section: z.string(),
-  item_id: z.string().optional(),
+  item_id: z.string().nullable().optional(),
   issue: z.string(),
   severity: z.enum(["fail", "warn"])
 });
