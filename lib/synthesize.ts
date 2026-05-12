@@ -212,6 +212,29 @@ function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknow
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return candidate;
   const draft = { ...(candidate as Record<string, unknown>) };
 
+  draft.reading_queue = tryParseJsonString(draft.reading_queue);
+  if (!draft.reading_queue || typeof draft.reading_queue !== "object" || Array.isArray(draft.reading_queue)) {
+    draft.reading_queue = {
+      read_in_full: [],
+      worth_a_glance: [],
+      skipped_count: corpus.curated.length,
+      skip_reason_summary:
+        corpus.curated.length === 0
+          ? "Curated corpus was empty today; no subscribed newsletters delivered posts in the last 24h."
+          : "Curated items were unavailable after schema repair."
+    };
+  }
+
+  draft.themes = tryParseJsonString(draft.themes);
+  if (!Array.isArray(draft.themes)) {
+    draft.themes = [];
+  }
+
+  draft.lexicon = tryParseJsonString(draft.lexicon);
+  if (!Array.isArray(draft.lexicon)) {
+    draft.lexicon = [];
+  }
+
   draft.global = tryParseJsonString(draft.global);
   if (!Array.isArray(draft.global) || draft.global.length < 5) {
     const fallbackGlobal = buildGlobalFallback(corpus);
