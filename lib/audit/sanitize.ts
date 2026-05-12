@@ -1,0 +1,163 @@
+import {
+  AuditReportSchema,
+  type AuditReport,
+  type Digest,
+  type GlobalItem,
+  type SourceArticle,
+  type VerificationIssue
+} from "@/lib/schema";
+import { computeDigestWordCount, truncateWords } from "@/lib/text";
+
+function normalizeId(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/['"`“”‘’]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function issueMatchesItem(
+  issue: VerificationIssue,
+  item: { headline?: string; url?: string; source?: string; term?: string; name?: string; text?: string }
+): boolean {
+  const target = normalizeId(issue.item_id);
+  const issueText = normalizeId(issue.issue);
+  const candidates = [item.headline, item.url, item.source, item.term, item.name, item.text]
+    .map(normalizeId)
+    .filter(Boolean);
+
+  if (target) {
+    return candidates.some((candidate) => candidate === target || candidate.includes(target) || target.includes(candidate));
+  }
+
+  return candidates.some((candidate) => candidate.length > 16 && issueText.includes(candidate));
+}
+
+function sectionMatches(issue: VerificationIssue, section: string): boolean {
+  const raw = issue.section.toLowerCase();
+  return raw === section || raw.includes(section);
+}
+
+function sourceDerivedItem(article: SourceArticle): GlobalItem {
+  const sourceText = truncateWords(article.excerpt || article.content || article.title, 65);
+  return {
+    headline: article.title,
+    body: `${article.source} coverage focuses on ${article.title}. ${sourceText}`,
+    sources: [article.url]
+  };
+}
+
+function usedBriefingUrls(digest: Digest): Set<string> {
+  return new Set([...digest.global, ...digest.china].flatMap((item) => item.sources));
+}
+
+function fillBriefingItems(
+  items: GlobalItem[],
+  corpus: SourceArticle[],
+  minimum: number,
+  maximum: number
+): GlobalItem[] {
+  if (items.length >= minimum) return items.slice(0, maximum);
+
+  const used = usedBriefingUrls({
+    date: "",
+    reading_queue: {
+      read_in_full: [],
+      worth_a_glance: [],
+      skipped_count: 0,
+      skip_reason_summary: ""
+    },
+    themes: [],
+    lexicon: [],
+    global: items,
+    china: [],
+    for_you: [],
+    total_word_count: 0
+  });
+  const additions = corpus
+    .filter((article) => !used.has(article.url))
+    .slice(0, minimum - items.length)
+    .map(sourceDerivedItem);
+
+  return [...items, ...additions].slice(0, maximum);
+}
+
+function normalizeDigestWordCount(digest: Digest): Digest {
+  return {
+    ...digest,
+    total_word_count: computeDigestWordCount({
+      reading_queue: digest.reading_queue,
+      themes: digest.themes,
+      lexicon: digest.lexicon,
+      global: digest.global,
+      china: digest.china,
+      for_you: digest.for_you
+    })
+  };
+}
+
+export function sanitizeAuditReportForPublication(
+  audit: AuditReport,
+  corpus: SourceArticle[]
+): AuditReport {
+  const failures = audit.verification_report.filter((issue) => issue.severity === "fail");
+  if (failures.length === 0) return audit;
+
+  const digest: Digest = structuredClone(audit.cleaned_digest);
+
+  digest.global = digest.global.filter(
+    (item) => !failures.some((issue) => sectionMatches(issue, "global") && issueMatchesItem(issue, item))
+  );
+  digest.china = digest.china.filter(
+    (item) => !failures.some((issue) => sectionMatches(issue, "china") && issueMatchesItem(issue, item))
+  );
+  digest.for_you = digest.for_you.filter(
+    (item) => !failures.some((issue) => sectionMatches(issue, "for_you") && issueMatchesItem(issue, item))
+  );
+  digest.lexicon = digest.lexicon.filter(
+    (item) => !failures.some((issue) => sectionMatches(issue, "lexicon") && issueMatchesItem(issue, item))
+  );
+  digest.themes = digest.themes.filter(
+    (item) => !failures.some((issue) => sectionMatches(issue, "theme") && issueMatchesItem(issue, item))
+  );
+  digest.reading_queue.read_in_full = digest.reading_queue.read_in_full.filter(
+    (item) => !failures.some((issue) => sectionMatches(issue, "reading") && issueMatchesItem(issue, item))
+  );
+  digest.reading_queue.worth_a_glance = digest.reading_queue.worth_a_glance.filter(
+    (item) => !failures.some((issue) => sectionMatches(issue, "reading") && issueMatchesItem(issue, item))
+  );
+
+  digest.global = fillBriefingItems(
+    digest.global,
+    corpus.filter((article) => article.source_pool === "global"),
+    5,
+    7
+  );
+
+  if (audit.cleaned_digest.china.length >= 3) {
+    digest.china = fillBriefingItems(
+      digest.china,
+      corpus.filter((article) => article.source_pool === "china"),
+      Math.min(3, corpus.filter((article) => article.source_pool === "china").length),
+      6
+    );
+  }
+
+  const convertedFailures: VerificationIssue[] = failures.map((issue) => ({
+    section: "audit",
+    item_id: issue.item_id ?? null,
+    issue: `Removed audit-failed ${issue.section} item from the published digest: ${issue.issue}`,
+    severity: "warn"
+  }));
+
+  const sanitized = {
+    ...audit,
+    cleaned_digest: normalizeDigestWordCount(digest),
+    verification_report: [
+      ...convertedFailures,
+      ...audit.verification_report.filter((issue) => issue.severity === "warn")
+    ]
+  };
+
+  return AuditReportSchema.parse(sanitized);
+}

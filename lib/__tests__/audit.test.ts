@@ -110,3 +110,40 @@ describe("auditDigest", () => {
     expect(mocks.openai).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("sanitizeAuditReportForPublication", () => {
+  it("removes failed briefing items and preserves a valid global section", async () => {
+    const { sanitizeAuditReportForPublication } = await import("../audit/sanitize");
+    const report = sanitizeAuditReportForPublication(
+      {
+        cleaned_digest: {
+          ...validDigest,
+          global: validDigest.global.map((item, index) =>
+            index === 0
+              ? {
+                  ...item,
+                  headline: "Unsupported headline",
+                  body: "This item contains an unsupported claim."
+                }
+              : item
+          )
+        },
+        verification_report: [
+          {
+            section: "global",
+            item_id: "Unsupported headline",
+            issue: "Unsupported global claim.",
+            severity: "fail"
+          }
+        ],
+        audit_provider: "openai/gpt-5.5",
+        audit_duration_ms: 10
+      },
+      corpus
+    );
+
+    expect(report.verification_report.every((item) => item.severity === "warn")).toBe(true);
+    expect(report.cleaned_digest.global).toHaveLength(5);
+    expect(report.cleaned_digest.global.some((item) => item.headline === "Unsupported headline")).toBe(false);
+  });
+});

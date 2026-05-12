@@ -12,13 +12,18 @@ ATTRIBUTION (all sections):
 - Direct quotes inside quotation marks appear verbatim in the cited source (within a 
   tolerance for minor whitespace).
 - No author is mentioned who does not appear in the corpus.
+- Treat invented quotation marks around paraphrases or slogans as fail-level issues unless
+  the exact quoted text appears in the cited source.
 
 FACTUAL CLAIMS (global briefing and China briefing sections, full audit):
 - Every numerical claim (figures, dates, counts, valuations, percentages) matches the 
   cited source(s).
 - Every named person, organization, or location appears in at least one cited source.
+- Every named company, product, AI model, market, valuation, date, and percentage appears
+  in at least one cited source for that same item.
 - Claims do not contradict the cited sources.
 - Conflicting source reports are surfaced rather than glossed over.
+- Comparisons to companies or products outside the cited source(s) are unsupported.
 
 For each issue found, output an entry in verification_report with:
 - section: which section it appeared in

@@ -43,6 +43,11 @@ ATTRIBUTION RULES (critical):
 - Always use the author's name and link to their original post.
 - Paraphrase in your own words. Never reproduce more than 10 consecutive words verbatim 
   from any source.
+- Avoid direct quotations entirely in digest text unless the exact quotation is indispensable.
+- Do not put paraphrases, slogans, positioning, or your own labels in quotation marks.
+- Do not mention a named person, company, product, model, country, market, valuation, date, or number unless it appears in at least one cited source for that same item.
+- Do not add outside comparisons. If a cited item is about Kuaishou, do not compare it to Runway, Pika, OpenAI, Sora, Google, or Gemini unless those names appear in the cited source(s) for that item.
+- Item headlines must not advance beyond the cited source. Use "heads to" instead of "lands in" unless the source says the person arrived.
 - For worth_a_glance items: write 30-50 words capturing the author's core argument in 
   YOUR framing, not theirs. Do not mimic their voice.
 - For read_in_full items: write a single sentence of orientation — what it's about and 
@@ -62,8 +67,10 @@ GLOBAL BRIEFING:
 - From GLOBAL_CORPUS, select 5-7 stories with broadest impact today.
 - Per item: clear headline + 60-90 word paraphrase + inline source link(s).
 - Prefer synthesizing across 2+ sources when multiple sources cover the same event.
+- Use 1 source when only 1 source covers the event; do not force multi-source synthesis by importing unrelated context.
 - Surface conflicts between sources explicitly when present, e.g. "AP reports X; BBC emphasizes Y."
 - Avoid making the section a list of unrelated single-source summaries when cross-source convergence exists.
+- Every sentence must be supported by at least one URL in that item's sources array.
 - Dry, factual tone.
 - Do not include single-source rumors or speculation.
 
@@ -73,6 +80,7 @@ CHINA BRIEFING:
 - Treat official/state media as valuable signal but not neutral ground truth. Attribute carefully.
 - Treat social-media trends as signals, not confirmed facts. Use them to surface emerging attention, consumer behavior, or tech/culture chatter, and distinguish them from reported news.
 - Synthesize across multiple Chinese-media sources when possible.
+- Use 1 source when only 1 source covers the event; do not add global AI-market comparisons unless the cited source makes them.
 - If one source emphasizes policy framing and another emphasizes market or technology effects, state that difference.
 - Include tech/business items with downstream relevance for HK markets, startups, AI, hardware, platforms, or creative tools.
 
@@ -82,6 +90,7 @@ FOR YOU:
   element this matches + link.
 - Only surface clear interest-profile matches. Generic items do not qualify.
 - De-prioritize discovery items that closely overlap with anything in the curated queue.
+- Do not invent quotes or catchy framings. Keep all quoted text out of this section.
 
 VOICE:
 - Smart, dry, declarative. Zero hype words.
@@ -165,7 +174,7 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
       STRICT_SHAPE_REQUIREMENTS:
         "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level china MUST be an array, even when empty. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
       QUALITY_REQUIREMENTS:
-        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. If CHINA_CORPUS has at least 5 items, china should normally contain 3-5 major China items. Global items should usually cite 2+ sources when multiple sources cover the same story. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text.",
+        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. If CHINA_CORPUS has at least 5 items, china should normally contain 3-5 major China items. Global items should usually cite 2+ sources when multiple sources cover the same story, but never combine unrelated sources just to reach 2 links. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text. Avoid quotation marks and unsupported outside comparisons.",
       extra_instruction: extraInstruction
     },
     null,
@@ -301,7 +310,7 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
   }
 
   if (digest.global.filter((item) => item.sources.length >= 2).length === 0) {
-    issues.push("global briefing contains no multi-source synthesized items");
+    issues.push("global briefing contains no multi-source synthesized items where sources clearly overlap");
   }
 
   if (digest.total_word_count < 900 && corpus.global.length >= 5 && corpus.discovery.length >= 10) {
@@ -314,7 +323,7 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
 
   return `The previous digest validated structurally but failed product-quality checks: ${issues.join(
     "; "
-  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items, 3-5 China items, and 3-5 for_you items when they clearly match the interest profile. Cluster global stories across sources and cite 2+ sources when coverage overlaps. Target at least 900 words on sparse curated days.`;
+  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items, 3-5 China items, and 3-5 for_you items when they clearly match the interest profile. Cluster global stories across sources only when sources cover the same event. Cite 2+ sources when coverage overlaps; otherwise cite one source and stay inside it. Remove quotation marks and outside comparisons. Target at least 900 words on sparse curated days.`;
 }
 
 async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: string): Promise<Digest> {
