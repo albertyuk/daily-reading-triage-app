@@ -8,7 +8,7 @@ function getAnthropic() {
 }
 
 export function getAnthropicAuditModel(): string {
-  return process.env.ANTHROPIC_AUDIT_MODEL ?? "claude-sonnet-4-20250514";
+  return process.env.ANTHROPIC_AUDIT_MODEL ?? "claude-sonnet-4-6";
 }
 
 export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle[]): Promise<unknown> {

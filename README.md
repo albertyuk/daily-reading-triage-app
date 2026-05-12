@@ -14,8 +14,8 @@ Personal daily reading triage and global briefing app.
 ## Important Env Vars
 
 - `ANTHROPIC_API_KEY`: Claude Opus 4.7 synthesis and Claude Sonnet 4.6 fallback audit.
-- `ANTHROPIC_SYNTHESIS_MODEL`: defaults to `claude-opus-4-1-20250805`.
-- `ANTHROPIC_AUDIT_MODEL`: defaults to `claude-sonnet-4-20250514`.
+- `ANTHROPIC_SYNTHESIS_MODEL`: defaults to `claude-opus-4-7`.
+- `ANTHROPIC_AUDIT_MODEL`: defaults to `claude-sonnet-4-6`.
 - `OPENAI_API_KEY`: GPT-5.5 primary audit.
 - `AUDIT_PROVIDER`: `openai` by default; set `anthropic` for fallback-first runs.
 - `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_TO`, `EMAIL_FROM`: inbound and outbound email.

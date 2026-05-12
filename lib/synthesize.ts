@@ -74,7 +74,7 @@ function getAnthropic() {
 }
 
 function getSynthesisModel(): string {
-  return process.env.ANTHROPIC_SYNTHESIS_MODEL ?? "claude-opus-4-1-20250805";
+  return process.env.ANTHROPIC_SYNTHESIS_MODEL ?? "claude-opus-4-7";
 }
 
 function compactArticle(article: SourceArticle): SourceArticle {
