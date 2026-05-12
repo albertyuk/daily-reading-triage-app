@@ -3,6 +3,8 @@ import { type Digest, type SourceArticle } from "@/lib/schema";
 import { AUDIT_SYSTEM_PROMPT } from "../prompt";
 import { parseJsonObject } from "@/lib/json";
 
+const JSON_PREFILL = "{";
+
 function getAnthropic() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
@@ -25,6 +27,10 @@ export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle
           schema_note:
             `Return JSON matching AuditReportSchema. Set audit_provider to 'anthropic/${getAnthropicAuditModel()}'. Return ONLY JSON, no preamble.`
         })
+      },
+      {
+        role: "assistant",
+        content: JSON_PREFILL
       }
     ]
   });
@@ -34,5 +40,6 @@ export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle
     const contentTypes = response.content.map((item) => item.type).join(", ") || "none";
     throw new Error(`Anthropic returned no text content. Content block types: ${contentTypes}`);
   }
-  return parseJsonObject(block.text);
+  const trimmed = block.text.trim();
+  return parseJsonObject(trimmed.startsWith("{") ? trimmed : `${JSON_PREFILL}${trimmed}`);
 }

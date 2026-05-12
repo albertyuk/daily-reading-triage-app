@@ -4,6 +4,8 @@ import { interestProfile } from "@/lib/interest-profile";
 import { parseJsonObject } from "@/lib/json";
 import { computeDigestWordCount, truncateChars } from "@/lib/text";
 
+const JSON_PREFILL = "{";
+
 export const SYNTHESIS_SYSTEM_PROMPT = `
 You are running a daily reading triage for one specific reader. You are NOT writing 
 a newsletter that replaces their reading — you are filtering and surfacing so they 
@@ -148,6 +150,11 @@ function extractText(response: { content: Array<{ type: string; text?: string }>
   return block.text;
 }
 
+function parsePrefilledJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  return parseJsonObject(trimmed.startsWith("{") ? trimmed : `${JSON_PREFILL}${trimmed}`);
+}
+
 function normalizeDigest(digest: Digest): Digest {
   return {
     ...digest,
@@ -170,11 +177,15 @@ async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: stri
       {
         role: "user",
         content: buildSynthesisUserMessage(corpus, extraInstruction)
+      },
+      {
+        role: "assistant",
+        content: JSON_PREFILL
       }
     ]
   });
 
-  const parsed = parseJsonObject(extractText(response));
+  const parsed = parsePrefilledJson(extractText(response));
   return DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
 }
 
@@ -214,10 +225,14 @@ export async function repairDigestForAudit(
           null,
           2
         )
+      },
+      {
+        role: "assistant",
+        content: JSON_PREFILL
       }
     ]
   });
 
-  const parsed = parseJsonObject(extractText(response));
+  const parsed = parsePrefilledJson(extractText(response));
   return DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
 }
