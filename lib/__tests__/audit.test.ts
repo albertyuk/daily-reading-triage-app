@@ -16,6 +16,7 @@ const validDigest: Digest = {
     body: "A verified global item with enough context.",
     sources: [`https://example.com/global-${index}`]
   })),
+  china: [],
   for_you: [],
   total_word_count: 100
 };

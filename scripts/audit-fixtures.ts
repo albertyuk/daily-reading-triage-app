@@ -106,6 +106,7 @@ export function corruptedDraft(date = "2026-05-11"): Digest {
           : "Reuters reported a global business story with broad market relevance and confirmed details.",
       sources: [`https://example.com/global-${index + 1}`]
     })),
+    china: [],
     for_you: [
       {
         headline: "AI Video Workflow",

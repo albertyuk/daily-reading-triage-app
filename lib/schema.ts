@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SourcePoolSchema = z.enum(["curated", "global", "discovery"]);
+export const SourcePoolSchema = z.enum(["curated", "global", "discovery", "china"]);
 export const SourceTypeSchema = z.enum(["free_rss", "email_forward", "scrape"]);
 
 export const SourceArticleSchema = z.object({
@@ -23,7 +23,8 @@ export const CorpusBundleSchema = z.object({
   date: z.string(),
   curated: z.array(SourceArticleSchema),
   global: z.array(SourceArticleSchema),
-  discovery: z.array(SourceArticleSchema)
+  discovery: z.array(SourceArticleSchema),
+  china: z.array(SourceArticleSchema).default([])
 });
 
 export const TriageItemSchema = z.object({
@@ -82,6 +83,7 @@ export const DigestSchema = z.object({
   themes: z.array(ThemeSchema).max(3),
   lexicon: z.array(LexiconEntrySchema).max(5),
   global: z.array(GlobalItemSchema).min(5).max(7),
+  china: z.array(GlobalItemSchema).min(0).max(6).default([]),
   for_you: z.array(ForYouItemSchema).min(0).max(5),
   total_word_count: z.number()
 });
@@ -104,6 +106,7 @@ export const RunStatsSchema = z.object({
   date: z.string(),
   curated_count: z.number(),
   global_count: z.number(),
+  china_count: z.number().default(0),
   discovery_count: z.number(),
   read_in_full_count: z.number(),
   worth_a_glance_count: z.number(),
@@ -115,16 +118,46 @@ export const RunStatsSchema = z.object({
   audit_fail_count: z.number(),
   audit_warn_count: z.number(),
   audit_provider: z.string(),
+  synthesis_provider: z.string().default("anthropic/claude-opus-4-7"),
   audit_duration_ms: z.number(),
   run_duration_ms: z.number()
+});
+
+export const RunLogEntrySchema = z.object({
+  stage: z.enum(["synthesis", "audit"]),
+  label: z.string(),
+  detail: z.string(),
+  model: z.string().optional()
+});
+
+export const ArticleDecisionSchema = z.object({
+  article_id: z.string(),
+  title: z.string(),
+  source: z.string(),
+  url: z.string().url(),
+  pool: SourcePoolSchema,
+  decision: z.string(),
+  rationale: z.string()
+});
+
+export const RunLogSchema = z.object({
+  synthesis: z.array(RunLogEntrySchema).default([]),
+  audit: z.array(RunLogEntrySchema).default([]),
+  article_decisions: z.array(ArticleDecisionSchema).default([])
 });
 
 export const PublishedDigestEnvelopeSchema = z.object({
   date: z.string(),
   digest: DigestSchema,
+  synthesis_provider: z.string().default("anthropic/claude-opus-4-7"),
   audit_provider: z.string(),
   audit_duration_ms: z.number(),
   verification_report: z.array(VerificationIssueSchema),
+  run_log: RunLogSchema.default({
+    synthesis: [],
+    audit: [],
+    article_decisions: []
+  }),
   stats: RunStatsSchema,
   published_at: z.string()
 });
@@ -142,8 +175,11 @@ export type Digest = z.infer<typeof DigestSchema>;
 export type VerificationIssue = z.infer<typeof VerificationIssueSchema>;
 export type AuditReport = z.infer<typeof AuditReportSchema>;
 export type RunStats = z.infer<typeof RunStatsSchema>;
+export type RunLogEntry = z.infer<typeof RunLogEntrySchema>;
+export type ArticleDecision = z.infer<typeof ArticleDecisionSchema>;
+export type RunLog = z.infer<typeof RunLogSchema>;
 export type PublishedDigestEnvelope = z.infer<typeof PublishedDigestEnvelopeSchema>;
 
 export function flattenCorpus(corpus: CorpusBundle): SourceArticle[] {
-  return [...corpus.curated, ...corpus.global, ...corpus.discovery];
+  return [...corpus.curated, ...corpus.global, ...corpus.discovery, ...corpus.china];
 }

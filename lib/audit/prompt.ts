@@ -13,7 +13,7 @@ ATTRIBUTION (all sections):
   tolerance for minor whitespace).
 - No author is mentioned who does not appear in the corpus.
 
-FACTUAL CLAIMS (global briefing section only, full audit):
+FACTUAL CLAIMS (global briefing and China briefing sections, full audit):
 - Every numerical claim (figures, dates, counts, valuations, percentages) matches the 
   cited source(s).
 - Every named person, organization, or location appears in at least one cited source.

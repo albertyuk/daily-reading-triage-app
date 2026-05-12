@@ -13,11 +13,11 @@ const config: Config = {
         sans: ["var(--font-sans)", "Inter", "ui-sans-serif", "system-ui"]
       },
       colors: {
-        ink: "#1d1d1f",
-        paper: "#fbfaf7",
-        muted: "#6f6a63",
-        rule: "#ded8cf",
-        accent: "#2f6f73"
+        ink: "rgb(var(--color-ink) / <alpha-value>)",
+        paper: "rgb(var(--color-paper) / <alpha-value>)",
+        muted: "rgb(var(--color-muted) / <alpha-value>)",
+        rule: "rgb(var(--color-rule) / <alpha-value>)",
+        accent: "rgb(var(--color-accent) / <alpha-value>)"
       }
     }
   },

@@ -266,13 +266,14 @@ async function ingestPool(pool: SourcePool, date: string): Promise<SourceArticle
 }
 
 export async function ingestAll(date: string): Promise<CorpusBundle> {
-  const [curated, global, discovery] = await Promise.all([
+  const [curated, global, discovery, china] = await Promise.all([
     ingestPool("curated", date),
     ingestPool("global", date),
-    ingestPool("discovery", date)
+    ingestPool("discovery", date),
+    ingestPool("china", date)
   ]);
 
-  const corpus = { date, curated, global, discovery };
+  const corpus = { date, curated, global, discovery, china };
   await getStorage().saveRawCorpus(date, corpus);
   return corpus;
 }

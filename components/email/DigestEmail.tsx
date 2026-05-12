@@ -82,7 +82,8 @@ export function DigestEmail({
           <Text style={styles.eyebrow}>Daily Reading Triage</Text>
           <Heading style={styles.h1}>{digest.date}</Heading>
           <Text style={styles.muted}>
-            {digest.total_word_count} words. Audit via {envelope.audit_provider}.
+            {digest.total_word_count} words. Synthesis via {envelope.synthesis_provider}. Audit via{" "}
+            {envelope.audit_provider}.
             {siteUrl ? (
               <>
                 {" "}
@@ -156,6 +157,25 @@ export function DigestEmail({
                 {item.sources.map((source, index) => (
                   <Link key={source} href={source} style={styles.link}>
                     {index > 0 ? " source" : "source"}
+                  </Link>
+                ))}
+              </Text>
+            ))}
+          </Section>
+
+          <Section>
+            <Heading as="h2" style={styles.h2}>
+              China Briefing
+            </Heading>
+            {digest.china.length === 0 ? (
+              <Text style={styles.muted}>No China-source item cleared the briefing bar today.</Text>
+            ) : null}
+            {digest.china.map((item) => (
+              <Text key={item.headline}>
+                <strong>{item.headline}.</strong> {item.body}{" "}
+                {item.sources.map((source, index) => (
+                  <Link key={source} href={source} style={styles.link}>
+                    {index > 0 ? ` source ${index + 1}` : "source 1"}
                   </Link>
                 ))}
               </Text>

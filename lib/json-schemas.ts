@@ -119,6 +119,11 @@ export const digestJsonSchema = {
       maxItems: 7,
       items: globalItemJsonSchema
     },
+    china: {
+      type: "array",
+      maxItems: 6,
+      items: globalItemJsonSchema
+    },
     for_you: {
       type: "array",
       maxItems: 5,
@@ -132,6 +137,7 @@ export const digestJsonSchema = {
     "themes",
     "lexicon",
     "global",
+    "china",
     "for_you",
     "total_word_count"
   ]

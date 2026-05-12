@@ -24,7 +24,8 @@ You will receive four inputs in the user message:
 1. CURATED_CORPUS — all posts from the reader's subscribed newsletters in the last 24h
 2. GLOBAL_CORPUS — top stories from major news sources in the last 24h
 3. DISCOVERY_CORPUS — broader source pool to filter for personalization
-4. INTEREST_PROFILE — the reader's interests, context, and what to surface or avoid
+4. CHINA_CORPUS — China-focused general, business, and technology coverage from Chinese media
+5. INTEREST_PROFILE — the reader's interests, context, and what to surface or avoid
 
 For CURATED_CORPUS, triage every piece into:
 
@@ -59,9 +60,19 @@ NEW IN THE LEXICON:
 
 GLOBAL BRIEFING:
 - From GLOBAL_CORPUS, select 5-7 stories with broadest impact today.
-- Per item: clear headline + 60-80 word paraphrase + inline source link(s).
-- Dry, factual tone. Surface conflicts between sources explicitly when present.
+- Per item: clear headline + 60-90 word paraphrase + inline source link(s).
+- Prefer synthesizing across 2+ sources when multiple sources cover the same event.
+- Surface conflicts between sources explicitly when present, e.g. "AP reports X; BBC emphasizes Y."
+- Avoid making the section a list of unrelated single-source summaries when cross-source convergence exists.
+- Dry, factual tone.
 - Do not include single-source rumors or speculation.
+
+CHINA BRIEFING:
+- From CHINA_CORPUS, select 3-5 major China items spanning general news, business/policy, and technology.
+- Treat official/state media as valuable signal but not neutral ground truth. Attribute carefully.
+- Synthesize across multiple Chinese-media sources when possible.
+- If one source emphasizes policy framing and another emphasizes market or technology effects, state that difference.
+- Include tech/business items with downstream relevance for HK markets, startups, AI, hardware, platforms, or creative tools.
 
 FOR YOU:
 - From DISCOVERY_CORPUS, select 3-5 items that match INTEREST_PROFILE.
@@ -83,8 +94,12 @@ function getAnthropic() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
 
-function getSynthesisModel(): string {
+export function getSynthesisModel(): string {
   return process.env.ANTHROPIC_SYNTHESIS_MODEL ?? "claude-opus-4-7";
+}
+
+export function getSynthesisProviderLabel(): string {
+  return `anthropic/${getSynthesisModel()}`;
 }
 
 function compactArticle(article: SourceArticle): SourceArticle {
@@ -102,7 +117,8 @@ function compactCorpus(corpus: CorpusBundle): CorpusBundle {
     date: corpus.date,
     curated: corpus.curated.slice(0, maxPerPool).map(compactArticle),
     global: corpus.global.slice(0, maxPerPool).map(compactArticle),
-    discovery: corpus.discovery.slice(0, maxPerPool).map(compactArticle)
+    discovery: corpus.discovery.slice(0, maxPerPool).map(compactArticle),
+    china: corpus.china.slice(0, maxPerPool).map(compactArticle)
   };
 }
 
@@ -120,6 +136,7 @@ DigestSchema:
   themes: Theme[],
   lexicon: LexiconEntry[],
   global: GlobalItem[],
+  china: GlobalItem[],
   for_you: ForYouItem[],
   total_word_count: number
 }
@@ -139,13 +156,14 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
       CURATED_CORPUS: compacted.curated,
       GLOBAL_CORPUS: compacted.global,
       DISCOVERY_CORPUS: compacted.discovery,
+      CHINA_CORPUS: compacted.china,
       INTEREST_PROFILE: interestProfile,
       DIGEST_DATE: corpus.date,
       DIGEST_SCHEMA: schemaNote(),
       STRICT_SHAPE_REQUIREMENTS:
-        "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
+        "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level china MUST be an array, even when empty. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
       QUALITY_REQUIREMENTS:
-        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. Return an empty for_you array only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text.",
+        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. If CHINA_CORPUS has at least 5 items, china should normally contain 3-5 major China items. Global items should usually cite 2+ sources when multiple sources cover the same story. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text.",
       extra_instruction: extraInstruction
     },
     null,
@@ -186,6 +204,7 @@ function normalizeDigest(digest: Digest): Digest {
       themes: digest.themes,
       lexicon: digest.lexicon,
       global: digest.global,
+      china: digest.china,
       for_you: digest.for_you
     })
   };
@@ -202,8 +221,8 @@ function tryParseJsonString(value: unknown): unknown {
   }
 }
 
-function buildGlobalFallback(corpus: CorpusBundle) {
-  return corpus.global.slice(0, 7).map((article) => ({
+function buildBriefingFallback(articles: SourceArticle[], limit: number) {
+  return articles.slice(0, limit).map((article) => ({
     headline: article.title,
     body: truncateWords(article.content || article.excerpt || article.title, 75),
     sources: [article.url]
@@ -239,10 +258,15 @@ function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknow
 
   draft.global = tryParseJsonString(draft.global);
   if (!Array.isArray(draft.global) || draft.global.length < 5) {
-    const fallbackGlobal = buildGlobalFallback(corpus);
+    const fallbackGlobal = buildBriefingFallback(corpus.global, 7);
     if (fallbackGlobal.length >= 5) {
       draft.global = fallbackGlobal;
     }
+  }
+
+  draft.china = tryParseJsonString(draft.china);
+  if (!Array.isArray(draft.china)) {
+    draft.china = buildBriefingFallback(corpus.china, 5);
   }
 
   draft.for_you = tryParseJsonString(draft.for_you);
@@ -270,6 +294,14 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
     );
   }
 
+  if (corpus.china.length >= 5 && digest.china.length === 0) {
+    issues.push(`china is empty even though ${corpus.china.length} China-source items were ingested`);
+  }
+
+  if (digest.global.filter((item) => item.sources.length >= 2).length === 0) {
+    issues.push("global briefing contains no multi-source synthesized items");
+  }
+
   if (digest.total_word_count < 900 && corpus.global.length >= 5 && corpus.discovery.length >= 10) {
     issues.push(
       `digest is only ${digest.total_word_count} words despite enough global and discovery material`
@@ -280,7 +312,7 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
 
   return `The previous digest validated structurally but failed product-quality checks: ${issues.join(
     "; "
-  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items and 3-5 for_you items when they clearly match the interest profile. Target at least 900 words on sparse curated days.`;
+  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items, 3-5 China items, and 3-5 for_you items when they clearly match the interest profile. Cluster global stories across sources and cite 2+ sources when coverage overlaps. Target at least 900 words on sparse curated days.`;
 }
 
 async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: string): Promise<Digest> {
@@ -324,12 +356,12 @@ export async function synthesize(corpus: CorpusBundle): Promise<Digest> {
       corpus,
       `The previous response failed schema validation with: ${
         firstError instanceof Error ? firstError.message : String(firstError)
-      }. Correct the STRUCTURE, not just wording. Return a tool input where global is an array, for_you is an array, and total_word_count is a number.`
+      }. Correct the STRUCTURE, not just wording. Return a tool input where global is an array, china is an array, for_you is an array, and total_word_count is a number.`
     );
   } catch (secondError) {
     return await callClaudeForDigest(
       corpus,
-      `The last two responses failed validation. This is a strict repair attempt. Required: global must be an array of 5-7 objects with headline/body/sources; for_you must be an array; total_word_count must be a number. Errors: ${
+      `The last two responses failed validation. This is a strict repair attempt. Required: global must be an array of 5-7 objects with headline/body/sources; china must be an array; for_you must be an array; total_word_count must be a number. Errors: ${
         secondError instanceof Error ? secondError.message : String(secondError)
       }`
     );
