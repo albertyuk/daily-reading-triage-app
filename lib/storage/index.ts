@@ -107,6 +107,8 @@ const localStorage: StorageAdapter = {
 };
 
 async function getKv() {
+  process.env.KV_REST_API_URL ??= process.env.UPSTASH_REDIS_REST_URL;
+  process.env.KV_REST_API_TOKEN ??= process.env.UPSTASH_REDIS_REST_TOKEN;
   const mod = await import("@vercel/kv");
   return mod.kv;
 }
@@ -172,7 +174,10 @@ const kvStorage: StorageAdapter = {
 };
 
 export function getStorage(): StorageAdapter {
-  if ((process.env.KV_REST_API_URL || process.env.KV_URL) && process.env.KV_REST_API_TOKEN) {
+  if (
+    ((process.env.KV_REST_API_URL || process.env.KV_URL) && process.env.KV_REST_API_TOKEN) ||
+    (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ) {
     return kvStorage;
   }
   return localStorage;
