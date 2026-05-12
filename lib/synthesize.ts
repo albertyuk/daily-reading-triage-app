@@ -73,6 +73,10 @@ function getAnthropic() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
 
+function getSynthesisModel(): string {
+  return process.env.ANTHROPIC_SYNTHESIS_MODEL ?? "claude-opus-4-1-20250805";
+}
+
 function compactArticle(article: SourceArticle): SourceArticle {
   const maxChars = Number(process.env.MAX_ARTICLE_CHARS ?? 12000);
   return {
@@ -138,7 +142,8 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
 function extractText(response: { content: Array<{ type: string; text?: string }> }): string {
   const block = response.content.find((item) => item.type === "text");
   if (!block || block.type !== "text" || !block.text) {
-    throw new Error("Anthropic returned no text content");
+    const contentTypes = response.content.map((item) => item.type).join(", ") || "none";
+    throw new Error(`Anthropic returned no text content. Content block types: ${contentTypes}`);
   }
   return block.text;
 }
@@ -158,7 +163,7 @@ function normalizeDigest(digest: Digest): Digest {
 
 async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: string): Promise<Digest> {
   const response = await getAnthropic().messages.create({
-    model: "claude-opus-4-7",
+    model: getSynthesisModel(),
     max_tokens: 8000,
     system: SYNTHESIS_SYSTEM_PROMPT,
     messages: [
@@ -192,7 +197,7 @@ export async function repairDigestForAudit(
   validationIssue: string
 ): Promise<Digest> {
   const response = await getAnthropic().messages.create({
-    model: "claude-opus-4-7",
+    model: getSynthesisModel(),
     max_tokens: 6000,
     system:
       "You repair a daily reading digest JSON so it validates against DigestSchema. Preserve all valid items, replace only missing or invalid required items using the provided corpus, and return only JSON.",

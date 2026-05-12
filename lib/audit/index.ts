@@ -7,7 +7,7 @@ import {
   type SourceArticle
 } from "@/lib/schema";
 import { AuditSchemaError } from "./errors";
-import { auditWithAnthropicRaw } from "./providers/anthropic";
+import { auditWithAnthropicRaw, getAnthropicAuditModel } from "./providers/anthropic";
 import { auditWithOpenAIRaw } from "./providers/openai";
 
 export type AuditProvider = "openai" | "anthropic";
@@ -17,7 +17,7 @@ function providerFromEnv(): AuditProvider {
 }
 
 function providerLabel(provider: AuditProvider): string {
-  return provider === "openai" ? "openai/gpt-5.5" : "anthropic/claude-sonnet-4-6";
+  return provider === "openai" ? "openai/gpt-5.5" : `anthropic/${getAnthropicAuditModel()}`;
 }
 
 async function runAuditProvider(

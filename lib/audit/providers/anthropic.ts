@@ -7,9 +7,13 @@ function getAnthropic() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
 
+export function getAnthropicAuditModel(): string {
+  return process.env.ANTHROPIC_AUDIT_MODEL ?? "claude-sonnet-4-20250514";
+}
+
 export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle[]): Promise<unknown> {
   const response = await getAnthropic().messages.create({
-    model: "claude-sonnet-4-6",
+    model: getAnthropicAuditModel(),
     max_tokens: 8000,
     system: AUDIT_SYSTEM_PROMPT,
     messages: [
@@ -19,7 +23,7 @@ export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle
           draft,
           corpus,
           schema_note:
-            "Return JSON matching AuditReportSchema. Set audit_provider to 'anthropic/claude-sonnet-4-6'. Return ONLY JSON, no preamble."
+            `Return JSON matching AuditReportSchema. Set audit_provider to 'anthropic/${getAnthropicAuditModel()}'. Return ONLY JSON, no preamble.`
         })
       }
     ]
@@ -27,7 +31,8 @@ export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle
 
   const block = response.content.find((item) => item.type === "text");
   if (!block || block.type !== "text" || !block.text) {
-    throw new Error("Anthropic returned no text content");
+    const contentTypes = response.content.map((item) => item.type).join(", ") || "none";
+    throw new Error(`Anthropic returned no text content. Content block types: ${contentTypes}`);
   }
   return parseJsonObject(block.text);
 }

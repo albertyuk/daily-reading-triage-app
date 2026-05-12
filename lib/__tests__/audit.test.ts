@@ -45,7 +45,8 @@ vi.mock("../audit/providers/openai", () => ({
 }));
 
 vi.mock("../audit/providers/anthropic", () => ({
-  auditWithAnthropicRaw: mocks.anthropic
+  auditWithAnthropicRaw: mocks.anthropic,
+  getAnthropicAuditModel: () => "claude-sonnet-4-20250514"
 }));
 
 vi.mock("../synthesize", () => ({
@@ -71,7 +72,7 @@ describe("auditDigest", () => {
     const { auditDigest } = await import("../audit");
     const report = await auditDigest(validDigest, corpus, "openai");
 
-    expect(report.audit_provider).toBe("anthropic/claude-sonnet-4-6");
+    expect(report.audit_provider).toBe("anthropic/claude-sonnet-4-20250514");
     expect(mocks.openai).toHaveBeenCalledTimes(1);
     expect(mocks.anthropic).toHaveBeenCalledTimes(1);
   });
