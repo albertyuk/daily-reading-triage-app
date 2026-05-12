@@ -41,7 +41,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../audit/providers/openai", () => ({
-  auditWithOpenAIRaw: mocks.openai
+  auditWithOpenAIRaw: mocks.openai,
+  getOpenAIAuditModel: () => "gpt-5.5"
 }));
 
 vi.mock("../audit/providers/anthropic", () => ({
@@ -73,6 +74,7 @@ describe("auditDigest", () => {
     const report = await auditDigest(validDigest, corpus, "openai");
 
     expect(report.audit_provider).toBe("anthropic/claude-sonnet-4-6");
+    expect(report.verification_report[0]?.section).toBe("audit");
     expect(mocks.openai).toHaveBeenCalledTimes(1);
     expect(mocks.anthropic).toHaveBeenCalledTimes(1);
   });

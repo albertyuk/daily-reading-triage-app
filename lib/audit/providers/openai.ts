@@ -7,9 +7,13 @@ function getOpenAI() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
+export function getOpenAIAuditModel(): string {
+  return process.env.OPENAI_AUDIT_MODEL ?? "gpt-5.5";
+}
+
 export async function auditWithOpenAIRaw(draft: Digest, corpus: SourceArticle[]): Promise<unknown> {
   const response = await getOpenAI().responses.parse({
-    model: "gpt-5.5",
+    model: getOpenAIAuditModel(),
     instructions: AUDIT_SYSTEM_PROMPT,
     input: [
       { role: "system", content: AUDIT_SYSTEM_PROMPT },
@@ -19,7 +23,7 @@ export async function auditWithOpenAIRaw(draft: Digest, corpus: SourceArticle[])
           draft,
           corpus,
           schema_note:
-            "Return JSON matching AuditReportSchema. Set audit_provider to 'openai/gpt-5.5'."
+            `Return JSON matching AuditReportSchema. Set audit_provider to 'openai/${getOpenAIAuditModel()}'.`
         })
       }
     ],

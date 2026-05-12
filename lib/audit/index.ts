@@ -8,7 +8,7 @@ import {
 } from "@/lib/schema";
 import { AuditSchemaError } from "./errors";
 import { auditWithAnthropicRaw, getAnthropicAuditModel } from "./providers/anthropic";
-import { auditWithOpenAIRaw } from "./providers/openai";
+import { auditWithOpenAIRaw, getOpenAIAuditModel } from "./providers/openai";
 
 export type AuditProvider = "openai" | "anthropic";
 
@@ -17,7 +17,7 @@ function providerFromEnv(): AuditProvider {
 }
 
 function providerLabel(provider: AuditProvider): string {
-  return provider === "openai" ? "openai/gpt-5.5" : `anthropic/${getAnthropicAuditModel()}`;
+  return provider === "openai" ? `openai/${getOpenAIAuditModel()}` : `anthropic/${getAnthropicAuditModel()}`;
 }
 
 async function runAuditProvider(
@@ -87,9 +87,16 @@ export async function auditDigest(
     }
 
     console.error(`Audit failed on ${provider}, attempting fallback`, err);
+    const primaryError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     const fallback: AuditProvider = provider === "openai" ? "anthropic" : "openai";
     try {
-      return await auditOnce(draft, corpus, fallback, t0);
+      const fallbackReport = await auditOnce(draft, corpus, fallback, t0);
+      fallbackReport.verification_report.unshift({
+        section: "audit",
+        issue: `Primary audit provider ${providerLabel(provider)} failed; used fallback ${providerLabel(fallback)}. Error: ${primaryError}`,
+        severity: "warn"
+      });
+      return fallbackReport;
     } catch (fallbackErr) {
       if (fallbackErr instanceof AuditSchemaError) {
         return auditWithRepairOnce(draft, corpus, fallback, t0, fallbackErr);

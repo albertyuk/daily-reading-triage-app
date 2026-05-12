@@ -17,6 +17,7 @@ Personal daily reading triage and global briefing app.
 - `ANTHROPIC_SYNTHESIS_MODEL`: defaults to `claude-opus-4-7`.
 - `ANTHROPIC_AUDIT_MODEL`: defaults to `claude-sonnet-4-6`.
 - `OPENAI_API_KEY`: GPT-5.5 primary audit.
+- `OPENAI_AUDIT_MODEL`: defaults to `gpt-5.5`; set this to an API model ID your OpenAI project can access.
 - `AUDIT_PROVIDER`: `openai` by default; set `anthropic` for fallback-first runs.
 - `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_TO`, `EMAIL_FROM`: inbound and outbound email.
 - `SITE_PASSWORD`: required in production by middleware; `SITE_USER` defaults to `reader`.
