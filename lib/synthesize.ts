@@ -3,7 +3,7 @@ import { digestJsonSchema } from "@/lib/json-schemas";
 import { DigestSchema, type CorpusBundle, type Digest, type SourceArticle } from "@/lib/schema";
 import { interestProfile } from "@/lib/interest-profile";
 import { parseJsonObject } from "@/lib/json";
-import { computeDigestWordCount, truncateChars } from "@/lib/text";
+import { computeDigestWordCount, truncateChars, truncateWords } from "@/lib/text";
 
 const DIGEST_TOOL_NAME = "return_digest";
 
@@ -142,6 +142,8 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
       INTEREST_PROFILE: interestProfile,
       DIGEST_DATE: corpus.date,
       DIGEST_SCHEMA: schemaNote(),
+      STRICT_SHAPE_REQUIREMENTS:
+        "Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
       extra_instruction: extraInstruction
     },
     null,
@@ -187,6 +189,49 @@ function normalizeDigest(digest: Digest): Digest {
   };
 }
 
+function tryParseJsonString(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function buildGlobalFallback(corpus: CorpusBundle) {
+  return corpus.global.slice(0, 7).map((article) => ({
+    headline: article.title,
+    body: truncateWords(article.content || article.excerpt || article.title, 75),
+    sources: [article.url]
+  }));
+}
+
+function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknown {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return candidate;
+  const draft = { ...(candidate as Record<string, unknown>) };
+
+  draft.global = tryParseJsonString(draft.global);
+  if (!Array.isArray(draft.global) || draft.global.length < 5) {
+    const fallbackGlobal = buildGlobalFallback(corpus);
+    if (fallbackGlobal.length >= 5) {
+      draft.global = fallbackGlobal;
+    }
+  }
+
+  draft.for_you = tryParseJsonString(draft.for_you);
+  if (!Array.isArray(draft.for_you)) {
+    draft.for_you = [];
+  }
+
+  if (typeof draft.total_word_count !== "number") {
+    draft.total_word_count = 0;
+  }
+
+  return draft;
+}
+
 async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: string): Promise<Digest> {
   const response = await getAnthropic().messages.create({
     model: getSynthesisModel(),
@@ -208,19 +253,31 @@ async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: stri
     ]
   });
 
-  const parsed = extractStructuredOutput(response, DIGEST_TOOL_NAME);
+  const parsed = coerceDigestCandidate(extractStructuredOutput(response, DIGEST_TOOL_NAME), corpus);
   return DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
 }
 
 export async function synthesize(corpus: CorpusBundle): Promise<Digest> {
+  let firstError: unknown;
   try {
     return await callClaudeForDigest(corpus);
   } catch (error) {
-    return callClaudeForDigest(
+    firstError = error;
+  }
+
+  try {
+    return await callClaudeForDigest(
       corpus,
       `The previous response failed schema validation with: ${
-        error instanceof Error ? error.message : String(error)
-      }. Return corrected JSON only.`
+        firstError instanceof Error ? firstError.message : String(firstError)
+      }. Correct the STRUCTURE, not just wording. Return a tool input where global is an array, for_you is an array, and total_word_count is a number.`
+    );
+  } catch (secondError) {
+    return await callClaudeForDigest(
+      corpus,
+      `The last two responses failed validation. This is a strict repair attempt. Required: global must be an array of 5-7 objects with headline/body/sources; for_you must be an array; total_word_count must be a number. Errors: ${
+        secondError instanceof Error ? secondError.message : String(secondError)
+      }`
     );
   }
 }
