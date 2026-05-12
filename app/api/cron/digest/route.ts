@@ -21,7 +21,12 @@ export async function GET(req: NextRequest) {
 
     const envelope = await runDailyPipeline(date);
     await storage.setMarker(marker, envelope.published_at);
-    return NextResponse.json({ ok: true, date, stats: envelope.stats });
+    return NextResponse.json({
+      ok: true,
+      date,
+      stats: envelope.stats,
+      audit_warnings: envelope.verification_report.filter((item) => item.severity === "warn")
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json(
