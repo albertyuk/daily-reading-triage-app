@@ -145,6 +145,25 @@ function scrapePitchbookLinks(html: string): Array<{ title: string; url: string 
   return [...deduped.values()].slice(0, 15);
 }
 
+function scrapeApLinks(html: string): Array<{ title: string; url: string }> {
+  const dom = new JSDOM(html, { url: "https://apnews.com/hub/ap-top-news" });
+  const document = dom.window.document;
+  const links = [...document.querySelectorAll("a")]
+    .map((anchor) => {
+      const title = cleanText(anchor.textContent ?? "");
+      const href = anchor.getAttribute("href");
+      if (!href || title.length < 20) return null;
+      const url = new URL(href, "https://apnews.com").toString();
+      if (!url.startsWith("https://apnews.com/article/")) return null;
+      return { title, url };
+    })
+    .filter((item): item is { title: string; url: string } => Boolean(item));
+
+  const deduped = new Map<string, { title: string; url: string }>();
+  for (const link of links) deduped.set(canonicalizeUrl(link.url), link);
+  return [...deduped.values()].slice(0, 20);
+}
+
 async function ingestPitchbook(date: string, source: SourceConfig): Promise<SourceArticle[]> {
   const html = await fetchText("https://pitchbook.com/news");
   const links = scrapePitchbookLinks(html);
@@ -176,8 +195,42 @@ async function ingestPitchbook(date: string, source: SourceConfig): Promise<Sour
   return articles.filter((article): article is SourceArticle => Boolean(article));
 }
 
+async function ingestApTopNews(date: string, source: SourceConfig): Promise<SourceArticle[]> {
+  const html = await fetchText("https://apnews.com/hub/ap-top-news");
+  const links = scrapeApLinks(html);
+  const { start, end } = getETDateWindow(date);
+  const publishedAt = new Date(Math.max(start.getTime(), Math.min(Date.now(), end.getTime() - 1))).toISOString();
+
+  const articles = await Promise.all(
+    links.map(async (link) => {
+      const content = await extractReadableText(link.url, link.title);
+      if (content.length < 100) return null;
+      const canonical = canonicalizeUrl(link.url);
+      return SourceArticleSchema.parse({
+        id: stableArticleId(source.name, canonical),
+        date,
+        title: link.title,
+        author: "Associated Press",
+        source: source.name,
+        url: canonical,
+        published_at: publishedAt,
+        content,
+        excerpt: content.slice(0, 500),
+        source_pool: source.pool,
+        source_type: "scrape",
+        word_count: wordCount(content)
+      });
+    })
+  );
+
+  return articles.filter((article): article is SourceArticle => Boolean(article));
+}
+
 async function ingestSource(source: SourceConfig, date: string): Promise<SourceArticle[]> {
   try {
+    if (source.adapter === "ap_scrape") {
+      return ingestApTopNews(date, source);
+    }
     if (source.adapter === "pitchbook_scrape") {
       return ingestPitchbook(date, source);
     }
@@ -203,8 +256,13 @@ export function dedupeArticles(articles: SourceArticle[]): SourceArticle[] {
 }
 
 async function ingestPool(pool: SourcePool, date: string): Promise<SourceArticle[]> {
-  const sourceArticles = await Promise.all(sourcePools[pool].map((source) => ingestSource(source, date)));
-  return dedupeArticles(sourceArticles.flat());
+  const settled = await Promise.allSettled(sourcePools[pool].map((source) => ingestSource(source, date)));
+  const sourceArticles = settled.flatMap((result, index) => {
+    if (result.status === "fulfilled") return result.value;
+    console.warn(`Skipping ${sourcePools[pool][index].name}:`, result.reason);
+    return [];
+  });
+  return dedupeArticles(sourceArticles);
 }
 
 export async function ingestAll(date: string): Promise<CorpusBundle> {
@@ -245,6 +303,20 @@ export async function validateSourceFeeds(): Promise<FeedCheckResult[]> {
             disabled: links.length === 0,
             item_count: links.length,
             issue: links.length > 0 ? undefined : "PitchBook scrape produced no usable links."
+          } satisfies FeedCheckResult;
+        }
+
+        if (source.adapter === "ap_scrape") {
+          const html = await fetchText("https://apnews.com/hub/ap-top-news");
+          const links = scrapeApLinks(html);
+          return {
+            source: source.name,
+            pool: source.pool,
+            rss: source.rss,
+            ok: links.length > 0,
+            disabled: links.length === 0,
+            item_count: links.length,
+            issue: links.length > 0 ? undefined : "AP scrape produced no usable links."
           } satisfies FeedCheckResult;
         }
 

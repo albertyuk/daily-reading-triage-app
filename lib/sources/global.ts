@@ -15,9 +15,10 @@ export const globalSources: SourceConfig[] = [
   },
   {
     name: "AP Top News",
-    rss: "https://feeds.apnews.com/rss/topnews",
-    type: "free_rss",
-    pool: "global"
+    rss: null,
+    type: "scrape",
+    pool: "global",
+    adapter: "ap_scrape"
   },
   {
     name: "BBC World",
