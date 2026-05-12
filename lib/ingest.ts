@@ -18,6 +18,7 @@ const parser = new Parser({
 type RssItem = Parser.Item & {
   creator?: string;
   "dc:creator"?: string;
+  author?: string;
   content?: string;
   contentSnippet?: string;
   summary?: string;

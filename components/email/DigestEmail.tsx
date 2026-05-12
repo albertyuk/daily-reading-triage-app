@@ -96,7 +96,7 @@ export function DigestEmail({
 
           <Section>
             <Heading as="h2" style={styles.h2}>
-              Today's Reading Queue
+              Today&apos;s Reading Queue
             </Heading>
             <Text style={styles.muted}>
               {digest.reading_queue.skipped_count} skipped: {digest.reading_queue.skip_reason_summary}

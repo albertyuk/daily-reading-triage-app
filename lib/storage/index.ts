@@ -137,7 +137,7 @@ const kvStorage: StorageAdapter = {
 
   async listDigests() {
     const kv = await getKv();
-    const dates = await kv.zrange<string>("digest:index", 0, 100, { rev: true });
+    const dates = await kv.zrange<string[]>("digest:index", 0, 100, { rev: true });
     const digests = await Promise.all(dates.map((date) => this.getDigest(date)));
     return digests.filter((item): item is PublishedDigestEnvelope => Boolean(item));
   },
