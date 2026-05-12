@@ -1,6 +1,5 @@
 import OpenAI from "openai";
-import { zodTextFormat } from "openai/helpers/zod";
-import { AuditReportSchema, type Digest, type SourceArticle } from "@/lib/schema";
+import type { Digest, SourceArticle } from "@/lib/schema";
 import { AUDIT_SYSTEM_PROMPT } from "../prompt";
 
 function getOpenAI() {
@@ -11,29 +10,34 @@ export function getOpenAIAuditModel(): string {
   return process.env.OPENAI_AUDIT_MODEL ?? "gpt-5.5";
 }
 
+function parseJsonObject(raw: string): unknown {
+  const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
+  return JSON.parse(cleaned);
+}
+
 export async function auditWithOpenAIRaw(draft: Digest, corpus: SourceArticle[]): Promise<unknown> {
-  const response = await getOpenAI().responses.parse({
+  const response = await getOpenAI().responses.create({
     model: getOpenAIAuditModel(),
     instructions: AUDIT_SYSTEM_PROMPT,
     input: [
-      { role: "system", content: AUDIT_SYSTEM_PROMPT },
       {
         role: "user",
         content: JSON.stringify({
           draft,
           corpus,
           schema_note:
-            `Return JSON matching AuditReportSchema. Set audit_provider to 'openai/${getOpenAIAuditModel()}'.`
+            `Return ONLY valid JSON matching AuditReportSchema. Set audit_provider to 'openai/${getOpenAIAuditModel()}'.`
         })
       }
     ],
     text: {
-      format: zodTextFormat(AuditReportSchema, "audit_report")
+      format: { type: "json_object" }
     }
   });
 
-  if (!response.output_parsed) {
-    throw new Error("OpenAI returned no parsed audit report");
+  if (!response.output_text) {
+    throw new Error("OpenAI returned empty audit response");
   }
-  return response.output_parsed;
+
+  return parseJsonObject(response.output_text);
 }
