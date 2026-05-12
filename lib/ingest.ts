@@ -88,10 +88,12 @@ async function articleFromRssItem(item: RssItem, source: SourceConfig, date: str
   if (!publishedAt || !isWithinETDate(publishedAt, date)) return null;
 
   const fallbackBody = cleanText(
-    [item.contentSnippet, item.content, item.summary].filter(Boolean).join("\n\n")
+    [item.contentSnippet, item.content, item.summary, source.feedContentOnly ? item.title : ""]
+      .filter(Boolean)
+      .join("\n\n")
   );
-  const content = await extractReadableText(url, fallbackBody);
-  if (content.length < 100) return null;
+  const content = source.feedContentOnly ? fallbackBody : await extractReadableText(url, fallbackBody);
+  if (content.length < (source.minContentLength ?? 100)) return null;
 
   const canonical = canonicalizeUrl(url);
   const title = cleanText(item.title ?? "Untitled");
@@ -122,6 +124,43 @@ async function ingestRssSource(source: SourceConfig, date: string): Promise<Sour
   const feed = await parser.parseURL(source.rss);
   const articles = await Promise.all(
     (feed.items as RssItem[]).map((item) => articleFromRssItem(item, source, date))
+  );
+  return articles.filter((article): article is SourceArticle => Boolean(article));
+}
+
+function getRsshubBaseUrl(): string | null {
+  const base = process.env.RSSHUB_BASE_URL?.trim();
+  return base ? base.replace(/\/+$/, "") : null;
+}
+
+function getRsshubPaths(source: SourceConfig): string[] {
+  const raw = source.rsshubPathEnv ? process.env[source.rsshubPathEnv] : source.rsshubPath;
+  if (!raw) {
+    throw new Error(
+      `${source.rsshubPathEnv ?? "rsshubPath"} is not configured for ${source.name}`
+    );
+  }
+  return raw
+    .split(",")
+    .map((path) => path.trim())
+    .filter(Boolean);
+}
+
+function buildRsshubUrl(baseUrl: string, pathOrUrl: string): string {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return `${baseUrl}/${pathOrUrl.replace(/^\/+/, "")}`;
+}
+
+async function ingestRsshubSource(source: SourceConfig, date: string): Promise<SourceArticle[]> {
+  if (source.disabled) return [];
+  const baseUrl = getRsshubBaseUrl();
+  if (!baseUrl) return [];
+  const paths = getRsshubPaths(source);
+  const feeds = await Promise.all(paths.map((path) => parser.parseURL(buildRsshubUrl(baseUrl, path))));
+  const articles = await Promise.all(
+    feeds.flatMap((feed) =>
+      (feed.items as RssItem[]).map((item) => articleFromRssItem(item, source, date))
+    )
   );
   return articles.filter((article): article is SourceArticle => Boolean(article));
 }
@@ -228,6 +267,9 @@ async function ingestApTopNews(date: string, source: SourceConfig): Promise<Sour
 
 async function ingestSource(source: SourceConfig, date: string): Promise<SourceArticle[]> {
   try {
+    if (source.adapter === "rsshub") {
+      return ingestRsshubSource(source, date);
+    }
     if (source.adapter === "ap_scrape") {
       return ingestApTopNews(date, source);
     }
@@ -318,6 +360,34 @@ export async function validateSourceFeeds(): Promise<FeedCheckResult[]> {
             disabled: links.length === 0,
             item_count: links.length,
             issue: links.length > 0 ? undefined : "AP scrape produced no usable links."
+          } satisfies FeedCheckResult;
+        }
+
+        if (source.adapter === "rsshub") {
+          const baseUrl = getRsshubBaseUrl();
+          if (!baseUrl) {
+            return {
+              source: source.name,
+              pool: source.pool,
+              rss: source.rss,
+              ok: false,
+              disabled: true,
+              issue: "Set RSSHUB_BASE_URL to enable this social-media source."
+            } satisfies FeedCheckResult;
+          }
+          const paths = getRsshubPaths(source);
+          const feeds = await Promise.all(
+            paths.map((routePath) => parser.parseURL(buildRsshubUrl(baseUrl, routePath)))
+          );
+          const itemCount = feeds.reduce((sum, feed) => sum + feed.items.length, 0);
+          return {
+            source: source.name,
+            pool: source.pool,
+            rss: source.rss ?? paths.map((routePath) => buildRsshubUrl(baseUrl, routePath)).join(", "),
+            ok: itemCount > 0,
+            disabled: itemCount === 0,
+            item_count: itemCount,
+            issue: itemCount > 0 ? undefined : "RSSHub route parsed but had no items."
           } satisfies FeedCheckResult;
         }
 

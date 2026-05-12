@@ -5,6 +5,10 @@ export type SourceConfig = {
   rss: string | null;
   type: SourceType;
   pool: SourcePool;
-  adapter?: "rss" | "pitchbook_scrape" | "ap_scrape";
+  adapter?: "rss" | "pitchbook_scrape" | "ap_scrape" | "rsshub";
+  rsshubPath?: string;
+  rsshubPathEnv?: string;
+  feedContentOnly?: boolean;
+  minContentLength?: number;
   disabled?: boolean;
 };

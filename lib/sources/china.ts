@@ -36,5 +36,51 @@ export const chinaSources: SourceConfig[] = [
     rss: "https://pandaily.com/feed/",
     type: "free_rss",
     pool: "china"
+  },
+  {
+    name: "What's on Weibo",
+    rss: "https://www.whatsonweibo.com/feed/",
+    type: "free_rss",
+    pool: "china"
+  },
+  {
+    name: "Weibo Hot Search",
+    rss: null,
+    type: "scrape",
+    pool: "china",
+    adapter: "rsshub",
+    rsshubPath: "/weibo/search/hot",
+    feedContentOnly: true,
+    minContentLength: 20
+  },
+  {
+    name: "Weibo Social Watch",
+    rss: null,
+    type: "scrape",
+    pool: "china",
+    adapter: "rsshub",
+    rsshubPathEnv: "WEIBO_RSSHUB_PATHS",
+    feedContentOnly: true,
+    minContentLength: 20
+  },
+  {
+    name: "Xiaohongshu Social Watch",
+    rss: null,
+    type: "scrape",
+    pool: "china",
+    adapter: "rsshub",
+    rsshubPathEnv: "XIAOHONGSHU_RSSHUB_PATHS",
+    feedContentOnly: true,
+    minContentLength: 20
+  },
+  {
+    name: "Douyin Social Watch",
+    rss: null,
+    type: "scrape",
+    pool: "china",
+    adapter: "rsshub",
+    rsshubPathEnv: "DOUYIN_RSSHUB_PATHS",
+    feedContentOnly: true,
+    minContentLength: 20
   }
 ];

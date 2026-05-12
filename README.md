@@ -24,6 +24,17 @@ Personal daily reading triage and global briefing app.
 - `KV_REST_API_URL`, `KV_REST_API_TOKEN`: switch storage from local JSON to Vercel KV / Upstash Redis.
 - `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`: also supported if the Upstash integration provides these names instead.
 - `CRON_SECRET`: protects cron endpoints.
+- `RSSHUB_BASE_URL`: optional base URL for direct China social-media ingestion. Use your self-hosted RSSHub or a trusted public instance.
+- `WEIBO_RSSHUB_PATHS`: optional comma-separated RSSHub routes for Weibo watchlists. The built-in Weibo hot-search route uses `/weibo/search/hot`.
+- `XIAOHONGSHU_RSSHUB_PATHS`: optional comma-separated RSSHub routes such as `/xiaohongshu/user/{user_id}/notes`.
+- `DOUYIN_RSSHUB_PATHS`: optional comma-separated RSSHub routes such as `/newrank/douyin/{dyid}`. This usually requires Newrank/RSSHub-side configuration.
+
+## China Social Sources
+
+Weibo, Xiaohongshu, and Douyin do not provide simple public RSS feeds. The app
+supports them through RSSHub routes so social-media signals can enter the China
+briefing without brittle direct scraping. For production reliability, prefer a
+self-hosted RSSHub instance with any required cookies configured there.
 
 ## Commands
 
