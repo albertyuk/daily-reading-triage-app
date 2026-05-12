@@ -143,7 +143,9 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
       DIGEST_DATE: corpus.date,
       DIGEST_SCHEMA: schemaNote(),
       STRICT_SHAPE_REQUIREMENTS:
-        "Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
+        "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
+      QUALITY_REQUIREMENTS:
+        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. Return an empty for_you array only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text.",
       extra_instruction: extraInstruction
     },
     null,
@@ -221,7 +223,7 @@ function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknow
       skip_reason_summary:
         corpus.curated.length === 0
           ? "Curated corpus was empty today; no subscribed newsletters delivered posts in the last 24h."
-          : "Curated items were unavailable after schema repair."
+          : "Curated items were ingested, but none cleared the reading threshold."
     };
   }
 
@@ -255,6 +257,32 @@ function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknow
   return draft;
 }
 
+function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string | undefined {
+  const issues: string[] = [];
+
+  if (digest.reading_queue.skip_reason_summary.toLowerCase().includes("schema repair")) {
+    issues.push("reading_queue contains internal schema-repair wording");
+  }
+
+  if (corpus.discovery.length >= 10 && digest.for_you.length === 0) {
+    issues.push(
+      `for_you is empty even though ${corpus.discovery.length} discovery items were ingested`
+    );
+  }
+
+  if (digest.total_word_count < 900 && corpus.global.length >= 5 && corpus.discovery.length >= 10) {
+    issues.push(
+      `digest is only ${digest.total_word_count} words despite enough global and discovery material`
+    );
+  }
+
+  if (issues.length === 0) return undefined;
+
+  return `The previous digest validated structurally but failed product-quality checks: ${issues.join(
+    "; "
+  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items and 3-5 for_you items when they clearly match the interest profile. Target at least 900 words on sparse curated days.`;
+}
+
 async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: string): Promise<Digest> {
   const response = await getAnthropic().messages.create({
     model: getSynthesisModel(),
@@ -283,7 +311,10 @@ async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: stri
 export async function synthesize(corpus: CorpusBundle): Promise<Digest> {
   let firstError: unknown;
   try {
-    return await callClaudeForDigest(corpus);
+    const digest = await callClaudeForDigest(corpus);
+    const repairInstruction = qualityRepairInstruction(digest, corpus);
+    if (!repairInstruction) return digest;
+    return await callClaudeForDigest(corpus, repairInstruction);
   } catch (error) {
     firstError = error;
   }

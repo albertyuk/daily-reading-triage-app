@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       date,
       stats: envelope.stats,
+      audit_failures: envelope.verification_report.filter((item) => item.severity === "fail"),
       audit_warnings: envelope.verification_report.filter((item) => item.severity === "warn")
     });
   } catch (error) {
