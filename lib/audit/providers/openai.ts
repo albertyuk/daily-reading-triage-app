@@ -1,18 +1,17 @@
 import OpenAI from "openai";
-import { zodResponseFormat } from "openai/helpers/zod";
+import { zodTextFormat } from "openai/helpers/zod";
 import { AuditReportSchema, type Digest, type SourceArticle } from "@/lib/schema";
 import { AUDIT_SYSTEM_PROMPT } from "../prompt";
-import { parseJsonObject } from "@/lib/json";
 
 function getOpenAI() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
 export async function auditWithOpenAIRaw(draft: Digest, corpus: SourceArticle[]): Promise<unknown> {
-  const response = await getOpenAI().chat.completions.create({
+  const response = await getOpenAI().responses.parse({
     model: "gpt-5.5",
-    response_format: zodResponseFormat(AuditReportSchema, "audit_report"),
-    messages: [
+    instructions: AUDIT_SYSTEM_PROMPT,
+    input: [
       { role: "system", content: AUDIT_SYSTEM_PROMPT },
       {
         role: "user",
@@ -23,10 +22,14 @@ export async function auditWithOpenAIRaw(draft: Digest, corpus: SourceArticle[])
             "Return JSON matching AuditReportSchema. Set audit_provider to 'openai/gpt-5.5'."
         })
       }
-    ]
+    ],
+    text: {
+      format: zodTextFormat(AuditReportSchema, "audit_report")
+    }
   });
 
-  const raw = response.choices[0]?.message?.content;
-  if (!raw) throw new Error("OpenAI returned empty response");
-  return parseJsonObject(raw);
+  if (!response.output_parsed) {
+    throw new Error("OpenAI returned no parsed audit report");
+  }
+  return response.output_parsed;
 }
