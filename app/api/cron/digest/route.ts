@@ -11,10 +11,11 @@ export async function GET(req: NextRequest) {
   try {
     assertCronAuthorized(req);
     const date = req.nextUrl.searchParams.get("date") ?? formatDateInET();
+    const force = req.nextUrl.searchParams.get("force") === "true";
     const marker = `digest:${date}`;
     const storage = getStorage();
     const existing = await storage.getMarker(marker);
-    if (existing) {
+    if (existing && !force) {
       return NextResponse.json({ ok: true, date, skipped: "already-ran", marker: existing });
     }
 
