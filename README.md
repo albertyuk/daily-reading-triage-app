@@ -41,3 +41,4 @@ These match 4:00 AM and 7:00 AM Eastern during daylight time. Adjust to `9` and 
 UTC during standard time, or use an hourly gated cron on a Pro plan if exact DST
 handling is required. Each route also accepts `?date=YYYY-MM-DD` for manual replay
 and uses markers to avoid duplicate sends.
+# daily-reading-triage-app
