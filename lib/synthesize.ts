@@ -1,10 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { digestJsonSchema } from "@/lib/json-schemas";
 import { DigestSchema, type CorpusBundle, type Digest, type SourceArticle } from "@/lib/schema";
 import { interestProfile } from "@/lib/interest-profile";
 import { parseJsonObject } from "@/lib/json";
 import { computeDigestWordCount, truncateChars } from "@/lib/text";
 
-const JSON_PREFILL = "{";
+const DIGEST_TOOL_NAME = "return_digest";
+
+type AnthropicInputSchema = {
+  type: "object";
+  properties?: Record<string, unknown>;
+  required?: string[];
+  additionalProperties?: boolean;
+};
 
 export const SYNTHESIS_SYSTEM_PROMPT = `
 You are running a daily reading triage for one specific reader. You are NOT writing 
@@ -141,18 +149,29 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
   );
 }
 
-function extractText(response: { content: Array<{ type: string; text?: string }> }): string {
-  const block = response.content.find((item) => item.type === "text");
-  if (!block || block.type !== "text" || !block.text) {
-    const contentTypes = response.content.map((item) => item.type).join(", ") || "none";
-    throw new Error(`Anthropic returned no text content. Content block types: ${contentTypes}`);
-  }
-  return block.text;
-}
+type AnthropicContentBlock = {
+  type: string;
+  text?: string;
+  name?: string;
+  input?: unknown;
+};
 
-function parsePrefilledJson(raw: string): unknown {
-  const trimmed = raw.trim();
-  return parseJsonObject(trimmed.startsWith("{") ? trimmed : `${JSON_PREFILL}${trimmed}`);
+function extractStructuredOutput(
+  response: { content: AnthropicContentBlock[]; stop_reason?: string | null },
+  toolName: string
+): unknown {
+  const toolBlock = response.content.find(
+    (item) => item.type === "tool_use" && item.name === toolName && item.input
+  );
+  if (toolBlock?.input) return toolBlock.input;
+
+  const block = response.content.find((item) => item.type === "text");
+  if (block?.text) return parseJsonObject(block.text);
+
+  const contentTypes = response.content.map((item) => item.type).join(", ") || "none";
+  throw new Error(
+    `Anthropic returned no structured output. Stop reason: ${response.stop_reason ?? "unknown"}. Content block types: ${contentTypes}`
+  );
 }
 
 function normalizeDigest(digest: Digest): Digest {
@@ -173,19 +192,23 @@ async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: stri
     model: getSynthesisModel(),
     max_tokens: 8000,
     system: SYNTHESIS_SYSTEM_PROMPT,
+    tools: [
+      {
+        name: DIGEST_TOOL_NAME,
+        description: "Return the completed daily digest as structured JSON.",
+        input_schema: digestJsonSchema as unknown as AnthropicInputSchema
+      }
+    ],
+    tool_choice: { type: "tool", name: DIGEST_TOOL_NAME },
     messages: [
       {
         role: "user",
         content: buildSynthesisUserMessage(corpus, extraInstruction)
-      },
-      {
-        role: "assistant",
-        content: JSON_PREFILL
       }
     ]
   });
 
-  const parsed = parsePrefilledJson(extractText(response));
+  const parsed = extractStructuredOutput(response, DIGEST_TOOL_NAME);
   return DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
 }
 
@@ -212,6 +235,14 @@ export async function repairDigestForAudit(
     max_tokens: 6000,
     system:
       "You repair a daily reading digest JSON so it validates against DigestSchema. Preserve all valid items, replace only missing or invalid required items using the provided corpus, and return only JSON.",
+    tools: [
+      {
+        name: DIGEST_TOOL_NAME,
+        description: "Return the repaired daily digest as structured JSON.",
+        input_schema: digestJsonSchema as unknown as AnthropicInputSchema
+      }
+    ],
+    tool_choice: { type: "tool", name: DIGEST_TOOL_NAME },
     messages: [
       {
         role: "user",
@@ -225,14 +256,10 @@ export async function repairDigestForAudit(
           null,
           2
         )
-      },
-      {
-        role: "assistant",
-        content: JSON_PREFILL
       }
     ]
   });
 
-  const parsed = parsePrefilledJson(extractText(response));
+  const parsed = extractStructuredOutput(response, DIGEST_TOOL_NAME);
   return DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
 }
