@@ -9,7 +9,7 @@ const triageItemJsonSchema = {
     url: urlString,
     tier: { type: "string", enum: ["read_in_full", "worth_a_glance"] },
     text: { type: "string" },
-    estimated_read_minutes: { type: "number" }
+    estimated_read_minutes: { anyOf: [{ type: "number" }, { type: "null" }] }
   },
   required: ["author", "source", "url", "tier", "text"]
 } as const;

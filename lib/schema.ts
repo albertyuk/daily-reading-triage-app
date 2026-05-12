@@ -32,7 +32,7 @@ export const TriageItemSchema = z.object({
   url: z.string().url(),
   tier: z.enum(["read_in_full", "worth_a_glance"]),
   text: z.string(),
-  estimated_read_minutes: z.number().optional()
+  estimated_read_minutes: z.number().nullable().optional()
 });
 
 export const ThemeSchema = z.object({
