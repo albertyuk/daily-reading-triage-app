@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { digestJsonSchema } from "@/lib/json-schemas";
-import { DigestSchema, type CorpusBundle, type Digest, type SourceArticle } from "@/lib/schema";
+import { DigestSchema, type CorpusBundle, type Digest, type GlobalItem, type SourceArticle } from "@/lib/schema";
 import { interestProfile } from "@/lib/interest-profile";
 import { parseJsonObject } from "@/lib/json";
 import { computeDigestWordCount, truncateChars, truncateWords } from "@/lib/text";
@@ -71,6 +71,10 @@ GLOBAL BRIEFING:
 - Surface conflicts between sources explicitly when present, e.g. "AP reports X; BBC emphasizes Y."
 - Avoid making the section a list of unrelated single-source summaries when cross-source convergence exists.
 - Every sentence must be supported by at least one URL in that item's sources array.
+- Diversify sources. When GLOBAL_CORPUS contains 4+ source organizations, the final global section should normally use at least 4 distinct source organizations, and no single outlet should dominate.
+- Prioritize stories that teach the reader about geopolitics, macroeconomics, markets, technology, institutions, public health, climate, war, migration, elections, trade, regulation, or major corporate strategy.
+- Omit isolated local crime, celebrity lawsuits, routine court cases, oddities, weather incidents, sports recaps, and human-interest pieces unless they clearly reveal a larger system-level trend.
+- A story should answer: "What does this teach a sharp reader about how the world works today?"
 - Dry, factual tone.
 - Do not include single-source rumors or speculation.
 
@@ -83,6 +87,8 @@ CHINA BRIEFING:
 - Use 1 source when only 1 source covers the event; do not add global AI-market comparisons unless the cited source makes them.
 - If one source emphasizes policy framing and another emphasizes market or technology effects, state that difference.
 - Include tech/business items with downstream relevance for HK markets, startups, AI, hardware, platforms, or creative tools.
+- Diversify sources. When CHINA_CORPUS contains 4+ source organizations, the final China section should normally use at least 3 distinct source organizations, with a mix of official/state, business/tech, and social/culture sources when available.
+- Omit routine propaganda, ceremonial diplomacy, isolated crime, celebrity gossip, product listicles, and local-interest stories unless they clearly teach something about policy, markets, platforms, consumer behavior, technology, or culture.
 
 FOR YOU:
 - From DISCOVERY_CORPUS, select 3-5 items that match INTEREST_PROFILE.
@@ -174,7 +180,7 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
       STRICT_SHAPE_REQUIREMENTS:
         "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level china MUST be an array, even when empty. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
       QUALITY_REQUIREMENTS:
-        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. If CHINA_CORPUS has at least 5 items, china should normally contain 3-5 major China items. Global items should usually cite 2+ sources when multiple sources cover the same story, but never combine unrelated sources just to reach 2 links. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text. Avoid quotation marks and unsupported outside comparisons.",
+        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. If CHINA_CORPUS has at least 5 items, china should normally contain 3-5 major China items. Global items should usually cite 2+ sources when multiple sources cover the same story, but never combine unrelated sources just to reach 2 links. Use at least 4 distinct global source organizations and 3 distinct China source organizations when available. Omit low-value local crime, celebrity, entertainment, sports, oddity, and human-interest stories unless they reveal a major structural trend. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text. Avoid quotation marks and unsupported outside comparisons.",
       extra_instruction: extraInstruction
     },
     null,
@@ -233,11 +239,113 @@ function tryParseJsonString(value: unknown): unknown {
 }
 
 function buildBriefingFallback(articles: SourceArticle[], limit: number) {
-  return articles.slice(0, limit).map((article) => ({
+  return diversifyArticles(articles.filter((article) => !isLowValueBriefingArticle(article)), limit).map((article) => ({
     headline: article.title,
     body: truncateWords(article.content || article.excerpt || article.title, 75),
     sources: [article.url]
   }));
+}
+
+function isLowValueBriefingArticle(article: SourceArticle): boolean {
+  const text = `${article.title} ${article.excerpt ?? ""}`.toLowerCase();
+  const lowValuePatterns = [
+    /\bgroom\b/,
+    /\bwedding night\b/,
+    /\bbest friend\b/,
+    /\bben affleck\b/,
+    /\bmatt damon\b/,
+    /\bcelebrity\b/,
+    /\bmovie\b/,
+    /\bthe rip\b/,
+    /\bsports?\b/,
+    /\bviral\b/,
+    /\bodd\b/,
+    /\bweird\b/,
+    /\bkilled\b/,
+    /\bmurder\b/,
+    /\bsues?\b/,
+    /\blawsuit\b/
+  ];
+  const highValuePatterns = [
+    /\belection\b/,
+    /\btrade\b/,
+    /\btariff\b/,
+    /\bcentral bank\b/,
+    /\binflation\b/,
+    /\bwar\b/,
+    /\bceasefire\b/,
+    /\bchina\b/,
+    /\brussia\b/,
+    /\biran\b/,
+    /\bmarkets?\b/,
+    /\bai\b/,
+    /\bsemiconductor\b/,
+    /\bclimate\b/,
+    /\bpolicy\b/,
+    /\bregulation\b/,
+    /\bipo\b/,
+    /\bantitrust\b/,
+    /\bdoj\b/,
+    /\bsec\b/,
+    /\bftc\b/,
+    /\bsupreme court\b/,
+    /\bfederal\b/,
+    /\bgovernment\b/,
+    /\bregulator\b/
+  ];
+
+  return lowValuePatterns.some((pattern) => pattern.test(text)) && !highValuePatterns.some((pattern) => pattern.test(text));
+}
+
+function diversifyArticles(articles: SourceArticle[], limit: number): SourceArticle[] {
+  const selected: SourceArticle[] = [];
+  const counts = new Map<string, number>();
+
+  for (const article of articles) {
+    const count = counts.get(article.source) ?? 0;
+    if (count >= 2) continue;
+    selected.push(article);
+    counts.set(article.source, count + 1);
+    if (selected.length >= limit) return selected;
+  }
+
+  for (const article of articles) {
+    if (selected.some((item) => item.url === article.url)) continue;
+    selected.push(article);
+    if (selected.length >= limit) break;
+  }
+
+  return selected;
+}
+
+function sourceDiversityForItems(items: GlobalItem[], corpus: SourceArticle[]): Set<string> {
+  const sourceByUrl = new Map(corpus.map((article) => [article.url, article.source]));
+  const names = new Set<string>();
+  for (const item of items) {
+    for (const url of item.sources) {
+      const source = sourceByUrl.get(url);
+      if (source) names.add(source);
+    }
+  }
+  return names;
+}
+
+function hasLowValueBriefingItem(items: GlobalItem[]): boolean {
+  return items.some((item) =>
+    isLowValueBriefingArticle({
+      id: item.headline,
+      date: "",
+      title: item.headline,
+      author: "",
+      source: "",
+      url: item.sources[0] ?? "https://example.com",
+      published_at: new Date(0).toISOString(),
+      content: item.body,
+      source_pool: "global",
+      source_type: "free_rss",
+      word_count: 0
+    })
+  );
 }
 
 function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknown {
@@ -313,6 +421,26 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
     issues.push("global briefing contains no multi-source synthesized items where sources clearly overlap");
   }
 
+  const globalCorpusSources = new Set(corpus.global.map((article) => article.source));
+  const globalDigestSources = sourceDiversityForItems(digest.global, corpus.global);
+  if (globalCorpusSources.size >= 4 && globalDigestSources.size < 4) {
+    issues.push(
+      `global briefing uses only ${globalDigestSources.size} source organizations despite ${globalCorpusSources.size} available`
+    );
+  }
+
+  const chinaCorpusSources = new Set(corpus.china.map((article) => article.source));
+  const chinaDigestSources = sourceDiversityForItems(digest.china, corpus.china);
+  if (chinaCorpusSources.size >= 4 && digest.china.length >= 3 && chinaDigestSources.size < 3) {
+    issues.push(
+      `China briefing uses only ${chinaDigestSources.size} source organizations despite ${chinaCorpusSources.size} available`
+    );
+  }
+
+  if (hasLowValueBriefingItem([...digest.global, ...digest.china])) {
+    issues.push("briefing includes low-value local crime, celebrity, entertainment, oddity, or routine legal items");
+  }
+
   if (digest.total_word_count < 900 && corpus.global.length >= 5 && corpus.discovery.length >= 10) {
     issues.push(
       `digest is only ${digest.total_word_count} words despite enough global and discovery material`
@@ -323,7 +451,7 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
 
   return `The previous digest validated structurally but failed product-quality checks: ${issues.join(
     "; "
-  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items, 3-5 China items, and 3-5 for_you items when they clearly match the interest profile. Cluster global stories across sources only when sources cover the same event. Cite 2+ sources when coverage overlaps; otherwise cite one source and stay inside it. Remove quotation marks and outside comparisons. Target at least 900 words on sparse curated days.`;
+  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items, 3-5 China items, and 3-5 for_you items when they clearly match the interest profile. Cluster global stories across sources only when sources cover the same event. Cite 2+ sources when coverage overlaps; otherwise cite one source and stay inside it. Use at least 4 distinct global sources and 3 distinct China sources when available. Omit local crime, celebrity lawsuits, entertainment disputes, sports, oddities, and isolated human-interest items unless they reveal a larger system-level trend. Remove quotation marks and outside comparisons. Target at least 900 words on sparse curated days.`;
 }
 
 async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: string): Promise<Digest> {

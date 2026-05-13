@@ -47,6 +47,78 @@ function sourceDerivedItem(article: SourceArticle): GlobalItem {
   };
 }
 
+function isLowValueBriefingArticle(article: SourceArticle): boolean {
+  const text = `${article.title} ${article.excerpt ?? ""}`.toLowerCase();
+  const lowValuePatterns = [
+    /\bgroom\b/,
+    /\bwedding night\b/,
+    /\bbest friend\b/,
+    /\bben affleck\b/,
+    /\bmatt damon\b/,
+    /\bcelebrity\b/,
+    /\bmovie\b/,
+    /\bthe rip\b/,
+    /\bsports?\b/,
+    /\bviral\b/,
+    /\bodd\b/,
+    /\bweird\b/,
+    /\bkilled\b/,
+    /\bmurder\b/,
+    /\bsues?\b/,
+    /\blawsuit\b/
+  ];
+  const highValuePatterns = [
+    /\belection\b/,
+    /\btrade\b/,
+    /\btariff\b/,
+    /\bcentral bank\b/,
+    /\binflation\b/,
+    /\bwar\b/,
+    /\bceasefire\b/,
+    /\bchina\b/,
+    /\brussia\b/,
+    /\biran\b/,
+    /\bmarkets?\b/,
+    /\bai\b/,
+    /\bsemiconductor\b/,
+    /\bclimate\b/,
+    /\bpolicy\b/,
+    /\bregulation\b/,
+    /\bipo\b/,
+    /\bantitrust\b/,
+    /\bdoj\b/,
+    /\bsec\b/,
+    /\bftc\b/,
+    /\bsupreme court\b/,
+    /\bfederal\b/,
+    /\bgovernment\b/,
+    /\bregulator\b/
+  ];
+
+  return lowValuePatterns.some((pattern) => pattern.test(text)) && !highValuePatterns.some((pattern) => pattern.test(text));
+}
+
+function diversifyArticles(articles: SourceArticle[], limit: number): SourceArticle[] {
+  const selected: SourceArticle[] = [];
+  const counts = new Map<string, number>();
+
+  for (const article of articles) {
+    const count = counts.get(article.source) ?? 0;
+    if (count >= 2) continue;
+    selected.push(article);
+    counts.set(article.source, count + 1);
+    if (selected.length >= limit) return selected;
+  }
+
+  for (const article of articles) {
+    if (selected.some((item) => item.url === article.url)) continue;
+    selected.push(article);
+    if (selected.length >= limit) break;
+  }
+
+  return selected;
+}
+
 function usedBriefingUrls(digest: Digest): Set<string> {
   return new Set([...digest.global, ...digest.china].flatMap((item) => item.sources));
 }
@@ -74,10 +146,11 @@ function fillBriefingItems(
     for_you: [],
     total_word_count: 0
   });
-  const additions = corpus
+  const candidates = corpus
     .filter((article) => !used.has(article.url))
-    .slice(0, minimum - items.length)
-    .map(sourceDerivedItem);
+    .filter((article) => !isLowValueBriefingArticle(article))
+    .sort((a, b) => b.published_at.localeCompare(a.published_at));
+  const additions = diversifyArticles(candidates, minimum - items.length).map(sourceDerivedItem);
 
   return [...items, ...additions].slice(0, maximum);
 }
