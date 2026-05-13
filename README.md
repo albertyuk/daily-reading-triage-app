@@ -28,6 +28,7 @@ Personal daily reading triage and global briefing app.
 - `MAX_PREFILTER_ARTICLE_CHARS`: defaults to `3500`; caps article text before synthesis and audit.
 - `MAX_SYNTHESIS_CURATED`, `MAX_SYNTHESIS_GLOBAL`, `MAX_SYNTHESIS_CHINA`, `MAX_SYNTHESIS_DISCOVERY`: cap how many articles each pool sends to Opus and GPT-5.5. Curated newsletters are preserved by default; the bigger savings come from global, China, and discovery feeds.
 - `MAX_ARTICLE_CHARS`: final per-article truncation cap before model calls; defaults to `3500`.
+- `DIGEST_RUN_LOCK_MS`: defaults to `600000`; prevents repeated manual reloads from starting overlapping paid model runs.
 - `RSSHUB_BASE_URL`: optional base URL for direct China social-media ingestion. Use your self-hosted RSSHub or a trusted public instance.
 - `WEIBO_RSSHUB_PATHS`: optional comma-separated RSSHub routes for Weibo watchlists. The built-in Weibo hot-search route uses `/weibo/search/hot`.
 - `XIAOHONGSHU_RSSHUB_PATHS`: optional comma-separated RSSHub routes such as `/xiaohongshu/user/{user_id}/notes`.
