@@ -4,6 +4,7 @@ import { formatDateInET } from "@/lib/dates";
 import { sendAuditWarningEmail, sendFailureEmail } from "@/lib/email";
 import { flattenCorpus } from "@/lib/schema";
 import { ingestAll } from "@/lib/ingest";
+import { prefilterCorpusForSynthesis } from "@/lib/prefilter";
 import { publish } from "@/lib/publish";
 import { synthesize } from "@/lib/synthesize";
 
@@ -12,9 +13,11 @@ export async function runDailyPipeline(date = formatDateInET()) {
 
   try {
     const corpus = await ingestAll(date);
-    const draft = await synthesize(corpus);
-    const rawAudit = await auditDigest(draft, flattenCorpus(corpus));
-    const audit = sanitizeAuditReportForPublication(rawAudit, flattenCorpus(corpus));
+    const synthesisCorpus = prefilterCorpusForSynthesis(corpus);
+    const auditCorpus = flattenCorpus(synthesisCorpus);
+    const draft = await synthesize(synthesisCorpus);
+    const rawAudit = await auditDigest(draft, auditCorpus);
+    const audit = sanitizeAuditReportForPublication(rawAudit, auditCorpus);
 
     const failures = rawAudit.verification_report.filter((item) => item.severity === "fail");
     const warnings = audit.verification_report.filter((item) => item.severity === "warn");
@@ -26,7 +29,7 @@ export async function runDailyPipeline(date = formatDateInET()) {
       await sendAuditWarningEmail(date, failures);
     }
 
-    return publish(date, audit, corpus, t0);
+    return publish(date, audit, corpus, t0, synthesisCorpus);
   } catch (error) {
     await sendFailureEmail(date, error);
     throw error;

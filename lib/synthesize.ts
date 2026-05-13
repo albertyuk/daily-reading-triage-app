@@ -120,7 +120,7 @@ export function getSynthesisProviderLabel(): string {
 }
 
 function compactArticle(article: SourceArticle): SourceArticle {
-  const maxChars = Number(process.env.MAX_ARTICLE_CHARS ?? 12000);
+  const maxChars = Number(process.env.MAX_ARTICLE_CHARS ?? 3500);
   return {
     ...article,
     content: truncateChars(article.content, maxChars),

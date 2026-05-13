@@ -13,11 +13,18 @@ export function buildRunStats(
   date: string,
   corpus: CorpusBundle,
   audit: AuditReport,
-  runStartedAt: number
+  runStartedAt: number,
+  consideredCorpus: CorpusBundle = corpus
 ): RunStats {
   const digest = audit.cleaned_digest;
   const failures = audit.verification_report.filter((item) => item.severity === "fail");
   const warnings = audit.verification_report.filter((item) => item.severity === "warn");
+  const synthesisInputChars = [
+    ...consideredCorpus.curated,
+    ...consideredCorpus.global,
+    ...consideredCorpus.china,
+    ...consideredCorpus.discovery
+  ].reduce((sum, article) => sum + article.content.length + (article.excerpt?.length ?? 0), 0);
 
   return {
     date,
@@ -25,6 +32,11 @@ export function buildRunStats(
     global_count: corpus.global.length,
     china_count: corpus.china.length,
     discovery_count: corpus.discovery.length,
+    synthesis_curated_count: consideredCorpus.curated.length,
+    synthesis_global_count: consideredCorpus.global.length,
+    synthesis_china_count: consideredCorpus.china.length,
+    synthesis_discovery_count: consideredCorpus.discovery.length,
+    synthesis_input_chars: synthesisInputChars,
     read_in_full_count: digest.reading_queue.read_in_full.length,
     worth_a_glance_count: digest.reading_queue.worth_a_glance.length,
     skipped_count: digest.reading_queue.skipped_count,
@@ -63,7 +75,7 @@ function buildArticleDecisionLog(corpus: CorpusBundle, audit: AuditReport): Arti
     const briefing = usedBriefingSources.get(article.url);
 
     let decision = "not_selected";
-    let rationale = "Not selected for the public digest after ranking against the day's stronger matches.";
+    let rationale = "Not selected by the prefilter or final digest ranking against the day's stronger matches.";
 
     if (full) {
       decision = "read_in_full";
@@ -100,9 +112,25 @@ function buildArticleDecisionLog(corpus: CorpusBundle, audit: AuditReport): Arti
   return decisions;
 }
 
-function buildRunLog(corpus: CorpusBundle, audit: AuditReport): RunLog {
+function sameCorpusSize(a: CorpusBundle, b: CorpusBundle): boolean {
+  return (
+    a.curated.length === b.curated.length &&
+    a.global.length === b.global.length &&
+    a.china.length === b.china.length &&
+    a.discovery.length === b.discovery.length
+  );
+}
+
+function buildRunLog(
+  corpus: CorpusBundle,
+  audit: AuditReport,
+  consideredCorpus: CorpusBundle = corpus
+): RunLog {
   const failures = audit.verification_report.filter((item) => item.severity === "fail");
   const warnings = audit.verification_report.filter((item) => item.severity === "warn");
+  const corpusDetail = sameCorpusSize(corpus, consideredCorpus)
+    ? `${corpus.curated.length} curated, ${corpus.global.length} global, ${corpus.china.length} China, and ${corpus.discovery.length} discovery articles were considered.`
+    : `${corpus.curated.length} curated, ${corpus.global.length} global, ${corpus.china.length} China, and ${corpus.discovery.length} discovery articles were ingested. The zero-token prefilter sent ${consideredCorpus.curated.length} curated, ${consideredCorpus.global.length} global, ${consideredCorpus.china.length} China, and ${consideredCorpus.discovery.length} discovery articles to synthesis and audit.`;
 
   return {
     synthesis: [
@@ -116,7 +144,7 @@ function buildRunLog(corpus: CorpusBundle, audit: AuditReport): RunLog {
       {
         stage: "synthesis",
         label: "Corpus size",
-        detail: `${corpus.curated.length} curated, ${corpus.global.length} global, ${corpus.china.length} China, and ${corpus.discovery.length} discovery articles were considered.`
+        detail: corpusDetail
       }
     ],
     audit: [
@@ -140,7 +168,8 @@ export async function publish(
   date: string,
   audit: AuditReport,
   corpus: CorpusBundle,
-  runStartedAt: number
+  runStartedAt: number,
+  consideredCorpus: CorpusBundle = corpus
 ): Promise<PublishedDigestEnvelope> {
   const envelope: PublishedDigestEnvelope = {
     date,
@@ -149,8 +178,8 @@ export async function publish(
     audit_provider: audit.audit_provider,
     audit_duration_ms: audit.audit_duration_ms,
     verification_report: audit.verification_report,
-    run_log: buildRunLog(corpus, audit),
-    stats: buildRunStats(date, corpus, audit, runStartedAt),
+    run_log: buildRunLog(corpus, audit, consideredCorpus),
+    stats: buildRunStats(date, corpus, audit, runStartedAt, consideredCorpus),
     published_at: new Date().toISOString()
   };
 

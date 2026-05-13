@@ -24,6 +24,10 @@ Personal daily reading triage and global briefing app.
 - `KV_REST_API_URL`, `KV_REST_API_TOKEN`: switch storage from local JSON to Vercel KV / Upstash Redis.
 - `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`: also supported if the Upstash integration provides these names instead.
 - `CRON_SECRET`: protects cron endpoints.
+- `PREFILTER_ENABLED`: defaults to enabled. Uses deterministic zero-token ranking before Opus so feed search stays cheap.
+- `MAX_PREFILTER_ARTICLE_CHARS`: defaults to `3500`; caps article text before synthesis and audit.
+- `MAX_SYNTHESIS_CURATED`, `MAX_SYNTHESIS_GLOBAL`, `MAX_SYNTHESIS_CHINA`, `MAX_SYNTHESIS_DISCOVERY`: cap how many articles each pool sends to Opus and GPT-5.5. Curated newsletters are preserved by default; the bigger savings come from global, China, and discovery feeds.
+- `MAX_ARTICLE_CHARS`: final per-article truncation cap before model calls; defaults to `3500`.
 - `RSSHUB_BASE_URL`: optional base URL for direct China social-media ingestion. Use your self-hosted RSSHub or a trusted public instance.
 - `WEIBO_RSSHUB_PATHS`: optional comma-separated RSSHub routes for Weibo watchlists. The built-in Weibo hot-search route uses `/weibo/search/hot`.
 - `XIAOHONGSHU_RSSHUB_PATHS`: optional comma-separated RSSHub routes such as `/xiaohongshu/user/{user_id}/notes`.
@@ -35,6 +39,15 @@ Weibo, Xiaohongshu, and Douyin do not provide simple public RSS feeds. The app
 supports them through RSSHub routes so social-media signals can enter the China
 briefing without brittle direct scraping. For production reliability, prefer a
 self-hosted RSSHub instance with any required cookies configured there.
+
+## Cost Controls
+
+The app fetches all configured feeds, then applies a free local prefilter before
+calling Claude Opus 4.7. Opus still does the final synthesis, but it sees a
+smaller, higher-signal corpus. GPT-5.5 audits the same filtered corpus, which also
+cuts audit tokens. To reduce cost further, lower `MAX_SYNTHESIS_GLOBAL`,
+`MAX_SYNTHESIS_CHINA`, `MAX_SYNTHESIS_DISCOVERY`, or
+`MAX_PREFILTER_ARTICLE_CHARS`.
 
 ## Commands
 
