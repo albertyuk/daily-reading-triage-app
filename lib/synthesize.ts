@@ -211,7 +211,7 @@ function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: stri
       DIGEST_DATE: corpus.date,
       DIGEST_SCHEMA: schemaNote(),
       STRICT_SHAPE_REQUIREMENTS:
-        "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level for_you MUST be an array, even when empty. Top-level _skip_log MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
+        "Top-level date MUST equal DIGEST_DATE. Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level for_you MUST be an array, even when empty. Top-level _skip_log MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
       QUALITY_REQUIREMENTS:
         "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. Global items should select distinct story clusters; never create multiple global items from one cluster. Cite 2+ sources when cluster coverage overlaps; otherwise cite one source and stay inside it. Use at least 4 distinct global source organizations when available. Omit low-value local crime, celebrity, entertainment, sports, oddity, and human-interest stories unless they reveal a major structural trend. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text. Avoid quotation marks and unsupported outside comparisons.",
       extra_instruction: extraInstruction
@@ -384,6 +384,9 @@ function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknow
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return candidate;
   const draft = { ...(candidate as Record<string, unknown>) };
 
+  // The pipeline date is a server-side fact, not something the model should decide.
+  draft.date = corpus.date;
+
   draft.reading_queue = tryParseJsonString(draft.reading_queue);
   if (!draft.reading_queue || typeof draft.reading_queue !== "object" || Array.isArray(draft.reading_queue)) {
     draft.reading_queue = {
@@ -430,6 +433,11 @@ function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknow
   }
 
   return draft;
+}
+
+export function finalizeDigestCandidate(candidate: unknown, corpus: CorpusBundle): Digest {
+  const coerced = coerceDigestCandidate(candidate, corpus);
+  return DigestSchema.parse(normalizeDigest(DigestSchema.parse(coerced)));
 }
 
 function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string | undefined {
@@ -527,13 +535,29 @@ async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: stri
     await getStorage().saveRunArtifact(corpus.date, "synthesis-thinking.md", thinking);
   }
 
-  const parsed = coerceDigestCandidate(
+  const digest = finalizeDigestCandidate(
     extractStructuredOutput(response as { content: AnthropicContentBlock[]; stop_reason?: string | null }, DIGEST_TOOL_NAME),
     corpus
   );
-  const digest = DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
   await getStorage().saveRunArtifact(corpus.date, "synthesis-output.json", digest);
   return digest;
+}
+
+function dateFromDraftOrCorpus(draft: unknown, corpus: SourceArticle[]): string {
+  if (draft && typeof draft === "object" && !Array.isArray(draft)) {
+    const date = (draft as { date?: unknown }).date;
+    if (typeof date === "string" && date.trim()) return date;
+  }
+  return corpus.find((article) => article.date)?.date ?? new Date().toISOString().slice(0, 10);
+}
+
+function bundleFromSourceArticles(corpus: SourceArticle[], date: string): CorpusBundle {
+  return {
+    date,
+    curated: corpus.filter((article) => article.source_pool === "curated"),
+    global: corpus.filter((article) => article.source_pool === "global"),
+    discovery: corpus.filter((article) => article.source_pool === "discovery")
+  };
 }
 
 export async function synthesize(corpus: CorpusBundle): Promise<Digest> {
@@ -567,7 +591,8 @@ export async function synthesize(corpus: CorpusBundle): Promise<Digest> {
 export async function repairDigestForAudit(
   draft: unknown,
   corpus: SourceArticle[],
-  validationIssue: string
+  validationIssue: string,
+  date = dateFromDraftOrCorpus(draft, corpus)
 ): Promise<Digest> {
   const response = await getAnthropic().messages.create({
     model: getSynthesisModel(),
@@ -600,5 +625,5 @@ export async function repairDigestForAudit(
   });
 
   const parsed = extractStructuredOutput(response, DIGEST_TOOL_NAME);
-  return DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
+  return finalizeDigestCandidate(parsed, bundleFromSourceArticles(corpus, date));
 }

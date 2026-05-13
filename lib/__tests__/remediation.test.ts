@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkCrossItemConsistency } from "../audit/cross-item-consistency";
 import { DigestSchema, GlobalItemSchema, SourceArticleSchema, type SourceArticle } from "../schema";
+import { finalizeDigestCandidate } from "../synthesize";
 import { clusterGlobalArticles } from "../synthesize/cluster";
 
 function globalArticle(title: string, url: string, content = title): SourceArticle {
@@ -76,5 +77,36 @@ describe("remediation safeguards", () => {
     });
 
     expect(checkCrossItemConsistency(digest).some((issue) => issue.severity === "fail")).toBe(true);
+  });
+
+  it("fills the digest date from the server-side corpus date", () => {
+    const candidate = {
+      reading_queue: {
+        read_in_full: [],
+        worth_a_glance: [],
+        skipped_count: 0,
+        skip_reason_summary: "None"
+      },
+      themes: [],
+      lexicon: [],
+      global: Array.from({ length: 5 }, (_, index) => ({
+        headline: `Global item ${index}`,
+        body: `[Source](https://example.com/global-${index}) reports a distinct institutional story.`,
+        sources: [`https://example.com/global-${index}`]
+      })),
+      for_you: [],
+      _skip_log: [],
+      total_word_count: 0
+    };
+
+    const digest = finalizeDigestCandidate(candidate, {
+      date: "2026-05-13",
+      curated: [],
+      global: [],
+      discovery: []
+    });
+
+    expect(digest.date).toBe("2026-05-13");
+    expect(digest.total_word_count).toBeGreaterThan(0);
   });
 });

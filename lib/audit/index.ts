@@ -77,7 +77,7 @@ async function auditWithRepairOnce(
     err.raw && typeof err.raw === "object" && "cleaned_digest" in err.raw
       ? (err.raw as { cleaned_digest: unknown }).cleaned_digest
       : draft;
-  const repaired = await repairDigestForAudit(rawDigest, corpus, err.message);
+  const repaired = await repairDigestForAudit(rawDigest, corpus, err.message, draft.date);
   return auditOnce(repaired, corpus, provider, t0);
 }
 
