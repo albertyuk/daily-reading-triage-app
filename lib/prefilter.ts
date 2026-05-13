@@ -109,7 +109,7 @@ function scoreArticle(article: SourceArticle): number {
   score += Math.min(article.word_count / 300, 6);
 
   if (article.source_pool === "curated") score += 25;
-  if (article.source_pool === "china" && /\btech|ai|business|market|ipo|policy|platform\b/i.test(text)) score += 10;
+  if (/\bchina|hong kong|hk|tech|ai|business|market|ipo|policy|platform\b/i.test(text)) score += 3;
   if (article.source_pool === "discovery") score += patternScore(text, INTEREST_PATTERNS, 3);
 
   return score;
@@ -169,8 +169,7 @@ export function prefilterCorpusForSynthesis(corpus: CorpusBundle): CorpusBundle 
       date: corpus.date,
       curated: corpus.curated.map(truncateArticle),
       global: corpus.global.map(truncateArticle),
-      discovery: corpus.discovery.map(truncateArticle),
-      china: corpus.china.map(truncateArticle)
+      discovery: corpus.discovery.map(truncateArticle)
     };
   }
 
@@ -178,7 +177,6 @@ export function prefilterCorpusForSynthesis(corpus: CorpusBundle): CorpusBundle 
     date: corpus.date,
     curated: corpus.curated.slice(0, curatedLimit).map(truncateArticle),
     global: selectArticles(corpus.global, envNumber("MAX_SYNTHESIS_GLOBAL", 24), 3),
-    discovery: selectArticles(corpus.discovery, envNumber("MAX_SYNTHESIS_DISCOVERY", 18), 3),
-    china: selectArticles(corpus.china, envNumber("MAX_SYNTHESIS_CHINA", 18), 3)
+    discovery: selectArticles(corpus.discovery, envNumber("MAX_SYNTHESIS_DISCOVERY", 24), 3)
   };
 }

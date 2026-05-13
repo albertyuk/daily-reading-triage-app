@@ -1,4 +1,5 @@
 import type { Digest, GlobalItem, PublishedDigestEnvelope, TriageItem } from "@/lib/schema";
+import { publicationFromUrl } from "@/lib/source-names";
 
 function Section({
   title,
@@ -30,6 +31,23 @@ function ItemLink({ item }: { item: { url: string; source?: string; headline?: s
   );
 }
 
+function MarkdownText({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (!match) return <span key={`${part}-${index}`}>{part}</span>;
+        return (
+          <a key={`${match[2]}-${index}`} href={match[2]} target="_blank" rel="noreferrer">
+            {match[1]}
+          </a>
+        );
+      })}
+    </>
+  );
+}
+
 function TriageItemView({ item, spacious = false }: { item: TriageItem; spacious?: boolean }) {
   return (
     <li className={spacious ? "mb-8" : "mb-5"}>
@@ -55,13 +73,16 @@ function BriefingList({ items, empty }: { items: GlobalItem[]; empty: string }) 
       {items.map((item) => (
         <li key={item.headline} className="mb-7">
           <h3 className="mb-1 font-sans text-base font-semibold text-ink">{item.headline}</h3>
-          <p className="m-0">{item.body}</p>
+          <p className="m-0">
+            <MarkdownText text={item.body} />
+          </p>
           <p className="mt-1 font-sans text-sm text-muted">
+            Sources:{" "}
             {item.sources.map((source, index) => (
               <span key={source}>
-                {index > 0 ? " · " : ""}
+                {index > 0 ? ", " : ""}
                 <a href={source} target="_blank" rel="noreferrer">
-                  source {index + 1}
+                  {publicationFromUrl(source) ?? `Source ${index + 1}`}
                 </a>
               </span>
             ))}
@@ -206,10 +227,6 @@ export function DigestView({ envelope }: { envelope: PublishedDigestEnvelope }) 
         <BriefingList items={digest.global} empty="No global item cleared the briefing bar today." />
       </Section>
 
-      <Section title="China Briefing">
-        <BriefingList items={digest.china} empty="No China-source item cleared the briefing bar today." />
-      </Section>
-
       <Section title="For You">
         {digest.for_you.length === 0 ? (
           <p className="font-sans text-sm text-muted">No discovery item cleared the bar today.</p>
@@ -222,7 +239,9 @@ export function DigestView({ envelope }: { envelope: PublishedDigestEnvelope }) 
                     {item.headline}
                   </a>
                 </h3>
-                <p className="m-0">{item.body}</p>
+                <p className="m-0">
+                  <MarkdownText text={item.body} />
+                </p>
                 <p className="mt-1 font-sans text-sm text-muted">
                   {item.why_for_you} · {item.source}
                 </p>

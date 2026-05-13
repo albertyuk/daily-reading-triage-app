@@ -25,3 +25,12 @@ export function isWithinETDate(value: string | Date | undefined, date: string): 
   const { start, end } = getETDateWindow(date);
   return parsed >= start && parsed < end;
 }
+
+export function isWithinETLookback(value: string | Date | undefined, date: string, hours: number): boolean {
+  if (!value) return false;
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const { end } = getETDateWindow(date);
+  const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
+  return parsed >= start && parsed < end;
+}

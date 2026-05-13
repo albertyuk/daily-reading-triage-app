@@ -7,22 +7,23 @@ import {
   type RunStats
 } from "@/lib/schema";
 import { getStorage } from "@/lib/storage";
+import { summarizeRun } from "@/lib/observability/token-log";
 import { getSynthesisProviderLabel } from "@/lib/synthesize";
 
-export function buildRunStats(
+export async function buildRunStats(
   date: string,
   corpus: CorpusBundle,
   audit: AuditReport,
   runStartedAt: number,
   consideredCorpus: CorpusBundle = corpus
-): RunStats {
+): Promise<RunStats> {
   const digest = audit.cleaned_digest;
   const failures = audit.verification_report.filter((item) => item.severity === "fail");
   const warnings = audit.verification_report.filter((item) => item.severity === "warn");
+  const llm = await summarizeRun(date);
   const synthesisInputChars = [
     ...consideredCorpus.curated,
     ...consideredCorpus.global,
-    ...consideredCorpus.china,
     ...consideredCorpus.discovery
   ].reduce((sum, article) => sum + article.content.length + (article.excerpt?.length ?? 0), 0);
 
@@ -30,11 +31,9 @@ export function buildRunStats(
     date,
     curated_count: corpus.curated.length,
     global_count: corpus.global.length,
-    china_count: corpus.china.length,
     discovery_count: corpus.discovery.length,
     synthesis_curated_count: consideredCorpus.curated.length,
     synthesis_global_count: consideredCorpus.global.length,
-    synthesis_china_count: consideredCorpus.china.length,
     synthesis_discovery_count: consideredCorpus.discovery.length,
     synthesis_input_chars: synthesisInputChars,
     read_in_full_count: digest.reading_queue.read_in_full.length,
@@ -48,6 +47,8 @@ export function buildRunStats(
     audit_warn_count: warnings.length,
     audit_provider: audit.audit_provider,
     synthesis_provider: getSynthesisProviderLabel(),
+    llm_cost_usd: llm.llm_cost_usd,
+    llm_calls: llm.llm_calls,
     audit_duration_ms: audit.audit_duration_ms,
     run_duration_ms: Date.now() - runStartedAt
   };
@@ -63,12 +64,9 @@ function buildArticleDecisionLog(corpus: CorpusBundle, audit: AuditReport): Arti
   for (const item of digest.global) {
     for (const source of item.sources) usedBriefingSources.set(source, `global: ${item.headline}`);
   }
-  for (const item of digest.china) {
-    for (const source of item.sources) usedBriefingSources.set(source, `china: ${item.headline}`);
-  }
 
   const decisions: ArticleDecision[] = [];
-  for (const article of [...corpus.curated, ...corpus.global, ...corpus.china, ...corpus.discovery]) {
+  for (const article of [...corpus.curated, ...corpus.global, ...corpus.discovery]) {
     const full = readInFull.get(article.url);
     const glance = worthAGlance.get(article.url);
     const personal = forYou.get(article.url);
@@ -79,10 +77,10 @@ function buildArticleDecisionLog(corpus: CorpusBundle, audit: AuditReport): Arti
 
     if (full) {
       decision = "read_in_full";
-      rationale = full.text;
+      rationale = full._reasoning ?? full.text;
     } else if (glance) {
       decision = "worth_a_glance";
-      rationale = glance.text;
+      rationale = glance._reasoning ?? glance.text;
     } else if (personal) {
       decision = "for_you";
       rationale = personal.why_for_you;
@@ -92,7 +90,7 @@ function buildArticleDecisionLog(corpus: CorpusBundle, audit: AuditReport): Arti
     } else if (article.source_pool === "curated") {
       decision = "skip";
       rationale = digest.reading_queue.skip_reason_summary;
-    } else if (article.source_pool === "global" || article.source_pool === "china") {
+    } else if (article.source_pool === "global") {
       rationale = "Not among the highest-impact briefing clusters after cross-source ranking.";
     } else if (article.source_pool === "discovery") {
       rationale = "Did not clearly beat other discovery items on the reader's stated interests.";
@@ -116,7 +114,6 @@ function sameCorpusSize(a: CorpusBundle, b: CorpusBundle): boolean {
   return (
     a.curated.length === b.curated.length &&
     a.global.length === b.global.length &&
-    a.china.length === b.china.length &&
     a.discovery.length === b.discovery.length
   );
 }
@@ -129,8 +126,8 @@ function buildRunLog(
   const failures = audit.verification_report.filter((item) => item.severity === "fail");
   const warnings = audit.verification_report.filter((item) => item.severity === "warn");
   const corpusDetail = sameCorpusSize(corpus, consideredCorpus)
-    ? `${corpus.curated.length} curated, ${corpus.global.length} global, ${corpus.china.length} China, and ${corpus.discovery.length} discovery articles were considered.`
-    : `${corpus.curated.length} curated, ${corpus.global.length} global, ${corpus.china.length} China, and ${corpus.discovery.length} discovery articles were ingested. The zero-token prefilter sent ${consideredCorpus.curated.length} curated, ${consideredCorpus.global.length} global, ${consideredCorpus.china.length} China, and ${consideredCorpus.discovery.length} discovery articles to synthesis and audit.`;
+    ? `${corpus.curated.length} curated, ${corpus.global.length} global, and ${corpus.discovery.length} discovery articles were considered.`
+    : `${corpus.curated.length} curated, ${corpus.global.length} global, and ${corpus.discovery.length} discovery articles were ingested. The zero-token prefilter sent ${consideredCorpus.curated.length} curated, ${consideredCorpus.global.length} global, and ${consideredCorpus.discovery.length} discovery articles to synthesis and audit.`;
 
   return {
     synthesis: [
@@ -179,7 +176,7 @@ export async function publish(
     audit_duration_ms: audit.audit_duration_ms,
     verification_report: audit.verification_report,
     run_log: buildRunLog(corpus, audit, consideredCorpus),
-    stats: buildRunStats(date, corpus, audit, runStartedAt, consideredCorpus),
+    stats: await buildRunStats(date, corpus, audit, runStartedAt, consideredCorpus),
     published_at: new Date().toISOString()
   };
 

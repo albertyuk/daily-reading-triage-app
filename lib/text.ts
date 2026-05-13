@@ -22,7 +22,13 @@ export function computeDigestWordCount(value: unknown): number {
   }
   if (value && typeof value === "object") {
     return Object.entries(value as Record<string, unknown>).reduce((sum, [key, item]) => {
-      if (key === "url" || key === "sources" || key === "date" || key === "total_word_count") {
+      if (
+        key.startsWith("_") ||
+        key === "url" ||
+        key === "sources" ||
+        key === "date" ||
+        key === "total_word_count"
+      ) {
         return sum;
       }
       return sum + computeDigestWordCount(item);

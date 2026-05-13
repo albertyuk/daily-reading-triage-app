@@ -29,7 +29,6 @@ function corpus(overrides: Partial<CorpusBundle>): CorpusBundle {
     date: "2026-05-11",
     curated: [],
     global: [],
-    china: [],
     discovery: [],
     ...overrides
   };

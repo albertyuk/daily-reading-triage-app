@@ -1,7 +1,18 @@
 import { z } from "zod";
 
-export const SourcePoolSchema = z.enum(["curated", "global", "discovery", "china"]);
+export const SourcePoolSchema = z.enum(["curated", "global", "discovery"]);
 export const SourceTypeSchema = z.enum(["free_rss", "email_forward", "scrape"]);
+
+export function noDuplicateBody(value: string): boolean {
+  const sentences = value.match(/[^.!?]+[.!?]+/g) ?? [value];
+  const seen = new Set<string>();
+  for (const sentence of sentences) {
+    const normalized = sentence.trim().toLowerCase().replace(/\s+/g, " ");
+    if (normalized.length > 30 && seen.has(normalized)) return false;
+    seen.add(normalized);
+  }
+  return true;
+}
 
 export const SourceArticleSchema = z.object({
   id: z.string(),
@@ -23,8 +34,7 @@ export const CorpusBundleSchema = z.object({
   date: z.string(),
   curated: z.array(SourceArticleSchema),
   global: z.array(SourceArticleSchema),
-  discovery: z.array(SourceArticleSchema),
-  china: z.array(SourceArticleSchema).default([])
+  discovery: z.array(SourceArticleSchema)
 });
 
 export const TriageItemSchema = z.object({
@@ -32,13 +42,15 @@ export const TriageItemSchema = z.object({
   source: z.string(),
   url: z.string().url(),
   tier: z.enum(["read_in_full", "worth_a_glance"]),
-  text: z.string(),
+  text: z.string().refine(noDuplicateBody, "Text contains duplicate sentences"),
+  _reasoning: z.string().max(280).optional(),
   estimated_read_minutes: z.number().nullable().optional()
 });
 
 export const ThemeSchema = z.object({
   name: z.string(),
   synthesis: z.string().max(400),
+  _reasoning: z.string().max(280).optional(),
   underlying_pieces: z
     .array(
       z.object({
@@ -55,21 +67,30 @@ export const LexiconEntrySchema = z.object({
   definition: z.string().max(200),
   introduced_by: z.string(),
   source: z.string(),
-  url: z.string().url()
+  url: z.string().url(),
+  _reasoning: z.string().max(280).optional()
 });
 
 export const GlobalItemSchema = z.object({
   headline: z.string(),
-  body: z.string(),
-  sources: z.array(z.string().url()).min(1)
+  body: z.string().refine(noDuplicateBody, "Body contains duplicate sentences"),
+  sources: z.array(z.string().url()).min(1),
+  _reasoning: z.string().max(280).optional()
 });
 
 export const ForYouItemSchema = z.object({
   headline: z.string(),
-  body: z.string(),
+  body: z.string().refine(noDuplicateBody, "Body contains duplicate sentences"),
   why_for_you: z.string().max(120),
   url: z.string().url(),
-  source: z.string()
+  source: z.string(),
+  _reasoning: z.string().max(280).optional()
+});
+
+export const SkipLogEntrySchema = z.object({
+  article_url: z.string().url(),
+  source: z.string(),
+  reason: z.string().max(200)
 });
 
 export const DigestSchema = z.object({
@@ -83,8 +104,8 @@ export const DigestSchema = z.object({
   themes: z.array(ThemeSchema).max(3),
   lexicon: z.array(LexiconEntrySchema).max(5),
   global: z.array(GlobalItemSchema).min(5).max(7),
-  china: z.array(GlobalItemSchema).min(0).max(6).default([]),
   for_you: z.array(ForYouItemSchema).min(0).max(5),
+  _skip_log: z.array(SkipLogEntrySchema).default([]),
   total_word_count: z.number()
 });
 
@@ -106,11 +127,9 @@ export const RunStatsSchema = z.object({
   date: z.string(),
   curated_count: z.number(),
   global_count: z.number(),
-  china_count: z.number().default(0),
   discovery_count: z.number(),
   synthesis_curated_count: z.number().default(0),
   synthesis_global_count: z.number().default(0),
-  synthesis_china_count: z.number().default(0),
   synthesis_discovery_count: z.number().default(0),
   synthesis_input_chars: z.number().default(0),
   read_in_full_count: z.number(),
@@ -124,6 +143,8 @@ export const RunStatsSchema = z.object({
   audit_warn_count: z.number(),
   audit_provider: z.string(),
   synthesis_provider: z.string().default("anthropic/claude-opus-4-7"),
+  llm_cost_usd: z.number().default(0),
+  llm_calls: z.number().default(0),
   audit_duration_ms: z.number(),
   run_duration_ms: z.number()
 });
@@ -140,7 +161,7 @@ export const ArticleDecisionSchema = z.object({
   title: z.string(),
   source: z.string(),
   url: z.string().url(),
-  pool: SourcePoolSchema,
+  pool: z.enum(["curated", "global", "discovery", "china"]),
   decision: z.string(),
   rationale: z.string()
 });
@@ -186,5 +207,5 @@ export type RunLog = z.infer<typeof RunLogSchema>;
 export type PublishedDigestEnvelope = z.infer<typeof PublishedDigestEnvelopeSchema>;
 
 export function flattenCorpus(corpus: CorpusBundle): SourceArticle[] {
-  return [...corpus.curated, ...corpus.global, ...corpus.discovery, ...corpus.china];
+  return [...corpus.curated, ...corpus.global, ...corpus.discovery];
 }

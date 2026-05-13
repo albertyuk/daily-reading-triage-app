@@ -7,8 +7,7 @@ import type { SourceConfig } from "./types";
 export const sourcePools = {
   curated: curatedSources,
   global: globalSources,
-  discovery: discoverySources,
-  china: chinaSources
+  discovery: [...discoverySources, ...chinaSources]
 };
 
 export const allSources: SourceConfig[] = [

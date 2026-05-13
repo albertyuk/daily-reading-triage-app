@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { auditReportJsonSchema } from "@/lib/json-schemas";
 import { type Digest, type SourceArticle } from "@/lib/schema";
+import { logLLMCall } from "@/lib/observability/token-log";
 import { AUDIT_SYSTEM_PROMPT } from "../prompt";
 import { parseJsonObject } from "@/lib/json";
 
@@ -39,6 +40,7 @@ export function getAnthropicAuditModel(): string {
 }
 
 export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle[]): Promise<unknown> {
+  const t0 = Date.now();
   const response = await getAnthropic().messages.create({
     model: getAnthropicAuditModel(),
     max_tokens: 8000,
@@ -62,6 +64,27 @@ export async function auditWithAnthropicRaw(draft: Digest, corpus: SourceArticle
         })
       }
     ]
+  });
+
+  const responseWithUsage = response as typeof response & {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+    _request_id?: string;
+  };
+  await logLLMCall(draft.date, {
+    stage: "audit_anthropic_fallback",
+    model: getAnthropicAuditModel(),
+    input_tokens: responseWithUsage.usage?.input_tokens ?? 0,
+    output_tokens: responseWithUsage.usage?.output_tokens ?? 0,
+    cached_tokens:
+      (responseWithUsage.usage?.cache_creation_input_tokens ?? 0) +
+      (responseWithUsage.usage?.cache_read_input_tokens ?? 0),
+    duration_ms: Date.now() - t0,
+    request_id: responseWithUsage._request_id
   });
 
   const toolBlock = (response.content as unknown[]).find(

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { Digest, SourceArticle } from "@/lib/schema";
+import { logLLMCall } from "@/lib/observability/token-log";
 import { AUDIT_SYSTEM_PROMPT } from "../prompt";
 
 function getOpenAI() {
@@ -16,6 +17,7 @@ function parseJsonObject(raw: string): unknown {
 }
 
 export async function auditWithOpenAIRaw(draft: Digest, corpus: SourceArticle[]): Promise<unknown> {
+  const t0 = Date.now();
   const response = await getOpenAI().responses.create({
     model: getOpenAIAuditModel(),
     instructions: AUDIT_SYSTEM_PROMPT,
@@ -38,6 +40,26 @@ export async function auditWithOpenAIRaw(draft: Digest, corpus: SourceArticle[])
   if (!response.output_text) {
     throw new Error("OpenAI returned empty audit response");
   }
+
+  const responseWithUsage = response as typeof response & {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      input_tokens_details?: { cached_tokens?: number };
+      output_tokens_details?: { reasoning_tokens?: number };
+    };
+    _request_id?: string;
+  };
+  await logLLMCall(draft.date, {
+    stage: "audit_openai",
+    model: getOpenAIAuditModel(),
+    input_tokens: responseWithUsage.usage?.input_tokens ?? 0,
+    output_tokens: responseWithUsage.usage?.output_tokens ?? 0,
+    thinking_tokens: responseWithUsage.usage?.output_tokens_details?.reasoning_tokens ?? 0,
+    cached_tokens: responseWithUsage.usage?.input_tokens_details?.cached_tokens ?? 0,
+    duration_ms: Date.now() - t0,
+    request_id: responseWithUsage._request_id
+  });
 
   return parseJsonObject(response.output_text);
 }

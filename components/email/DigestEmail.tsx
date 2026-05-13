@@ -11,6 +11,7 @@ import {
   Text
 } from "@react-email/components";
 import type { PublishedDigestEnvelope } from "@/lib/schema";
+import { publicationFromUrl } from "@/lib/source-names";
 
 const styles = {
   body: {
@@ -59,6 +60,23 @@ const styles = {
     color: "#2f6f73"
   }
 };
+
+function MarkdownEmailText({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (!match) return <span key={`${part}-${index}`}>{part}</span>;
+        return (
+          <Link key={`${match[2]}-${index}`} href={match[2]} style={styles.link}>
+            {match[1]}
+          </Link>
+        );
+      })}
+    </>
+  );
+}
 
 export function DigestEmail({
   envelope,
@@ -153,29 +171,10 @@ export function DigestEmail({
             </Heading>
             {digest.global.map((item) => (
               <Text key={item.headline}>
-                <strong>{item.headline}.</strong> {item.body}{" "}
+                <strong>{item.headline}.</strong> <MarkdownEmailText text={item.body} />{" "}
                 {item.sources.map((source, index) => (
                   <Link key={source} href={source} style={styles.link}>
-                    {index > 0 ? " source" : "source"}
-                  </Link>
-                ))}
-              </Text>
-            ))}
-          </Section>
-
-          <Section>
-            <Heading as="h2" style={styles.h2}>
-              China Briefing
-            </Heading>
-            {digest.china.length === 0 ? (
-              <Text style={styles.muted}>No China-source item cleared the briefing bar today.</Text>
-            ) : null}
-            {digest.china.map((item) => (
-              <Text key={item.headline}>
-                <strong>{item.headline}.</strong> {item.body}{" "}
-                {item.sources.map((source, index) => (
-                  <Link key={source} href={source} style={styles.link}>
-                    {index > 0 ? ` source ${index + 1}` : "source 1"}
+                    {index > 0 ? `, ${publicationFromUrl(source) ?? `Source ${index + 1}`}` : publicationFromUrl(source) ?? "Source"}
                   </Link>
                 ))}
               </Text>
@@ -191,7 +190,7 @@ export function DigestEmail({
             ) : null}
             {digest.for_you.map((item) => (
               <Text key={item.url}>
-                <strong>{item.headline}.</strong> {item.body}{" "}
+                <strong>{item.headline}.</strong> <MarkdownEmailText text={item.body} />{" "}
                 <Link href={item.url} style={styles.link}>
                   {item.source}
                 </Link>
@@ -200,6 +199,21 @@ export function DigestEmail({
               </Text>
             ))}
           </Section>
+
+          <Hr />
+          <Text style={styles.muted}>
+            This run: {digest.total_word_count} words · ${envelope.stats.llm_cost_usd.toFixed(4)} in LLM
+            cost · {envelope.stats.synthesis_input_chars} synthesis input chars ·{" "}
+            {envelope.stats.audit_fail_count} audit failures
+            {siteUrl ? (
+              <>
+                {" "}
+                <Link href={`${siteUrl}/runs/${digest.date}`} style={styles.link}>
+                  Full trace
+                </Link>
+              </>
+            ) : null}
+          </Text>
         </Container>
       </Body>
     </Html>

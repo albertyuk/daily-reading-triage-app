@@ -7,6 +7,7 @@ import {
   type SourceArticle
 } from "@/lib/schema";
 import { AuditSchemaError } from "./errors";
+import { checkCrossItemConsistency } from "./cross-item-consistency";
 import { auditWithAnthropicRaw, getAnthropicAuditModel } from "./providers/anthropic";
 import { auditWithOpenAIRaw, getOpenAIAuditModel } from "./providers/openai";
 
@@ -37,7 +38,15 @@ function finalizeAuditReport(raw: unknown, provider: AuditProvider, t0: number):
   };
 
   try {
-    return AuditReportSchema.parse(withTrace);
+    const parsed = AuditReportSchema.parse(withTrace);
+    const crossItemIssues = checkCrossItemConsistency(parsed.cleaned_digest);
+    if (crossItemIssues.length > 0) {
+      return AuditReportSchema.parse({
+        ...parsed,
+        verification_report: [...parsed.verification_report, ...crossItemIssues]
+      });
+    }
+    return parsed;
   } catch (error) {
     throw new AuditSchemaError(
       error instanceof z.ZodError ? error.message : "Audit report failed schema validation",

@@ -9,9 +9,10 @@ const triageItemJsonSchema = {
     url: urlString,
     tier: { type: "string", enum: ["read_in_full", "worth_a_glance"] },
     text: { type: "string" },
+    _reasoning: { type: "string", maxLength: 280 },
     estimated_read_minutes: { anyOf: [{ type: "number" }, { type: "null" }] }
   },
-  required: ["author", "source", "url", "tier", "text"]
+  required: ["author", "source", "url", "tier", "text", "_reasoning"]
 } as const;
 
 const themeJsonSchema = {
@@ -20,6 +21,7 @@ const themeJsonSchema = {
   properties: {
     name: { type: "string" },
     synthesis: { type: "string" },
+    _reasoning: { type: "string", maxLength: 280 },
     underlying_pieces: {
       type: "array",
       minItems: 2,
@@ -35,7 +37,7 @@ const themeJsonSchema = {
       }
     }
   },
-  required: ["name", "synthesis", "underlying_pieces"]
+  required: ["name", "synthesis", "_reasoning", "underlying_pieces"]
 } as const;
 
 const lexiconEntryJsonSchema = {
@@ -46,9 +48,10 @@ const lexiconEntryJsonSchema = {
     definition: { type: "string" },
     introduced_by: { type: "string" },
     source: { type: "string" },
-    url: urlString
+    url: urlString,
+    _reasoning: { type: "string", maxLength: 280 }
   },
-  required: ["term", "definition", "introduced_by", "source", "url"]
+  required: ["term", "definition", "introduced_by", "source", "url", "_reasoning"]
 } as const;
 
 const globalItemJsonSchema = {
@@ -61,9 +64,10 @@ const globalItemJsonSchema = {
       type: "array",
       minItems: 1,
       items: urlString
-    }
+    },
+    _reasoning: { type: "string", maxLength: 280 }
   },
-  required: ["headline", "body", "sources"]
+  required: ["headline", "body", "sources", "_reasoning"]
 } as const;
 
 const forYouItemJsonSchema = {
@@ -74,9 +78,21 @@ const forYouItemJsonSchema = {
     body: { type: "string" },
     why_for_you: { type: "string" },
     url: urlString,
-    source: { type: "string" }
+    source: { type: "string" },
+    _reasoning: { type: "string", maxLength: 280 }
   },
-  required: ["headline", "body", "why_for_you", "url", "source"]
+  required: ["headline", "body", "why_for_you", "url", "source", "_reasoning"]
+} as const;
+
+const skipLogEntryJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    article_url: urlString,
+    source: { type: "string" },
+    reason: { type: "string", maxLength: 200 }
+  },
+  required: ["article_url", "source", "reason"]
 } as const;
 
 export const digestJsonSchema = {
@@ -119,15 +135,14 @@ export const digestJsonSchema = {
       maxItems: 7,
       items: globalItemJsonSchema
     },
-    china: {
-      type: "array",
-      maxItems: 6,
-      items: globalItemJsonSchema
-    },
     for_you: {
       type: "array",
       maxItems: 5,
       items: forYouItemJsonSchema
+    },
+    _skip_log: {
+      type: "array",
+      items: skipLogEntryJsonSchema
     },
     total_word_count: { type: "number" }
   },
@@ -137,8 +152,8 @@ export const digestJsonSchema = {
     "themes",
     "lexicon",
     "global",
-    "china",
     "for_you",
+    "_skip_log",
     "total_word_count"
   ]
 } as const;

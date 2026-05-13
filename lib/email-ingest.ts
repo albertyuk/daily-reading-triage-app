@@ -100,8 +100,7 @@ function mergeEmailIntoCorpus(existing: CorpusBundle | null, article: SourceArti
     date: article.date,
     curated: [],
     global: [],
-    discovery: [],
-    china: []
+    discovery: []
   };
 
   const alreadyPresent = corpus.curated.some((item) => item.id === article.id || item.title === article.title);

@@ -3,6 +3,9 @@ import { digestJsonSchema } from "@/lib/json-schemas";
 import { DigestSchema, type CorpusBundle, type Digest, type GlobalItem, type SourceArticle } from "@/lib/schema";
 import { interestProfile } from "@/lib/interest-profile";
 import { parseJsonObject } from "@/lib/json";
+import { logLLMCall } from "@/lib/observability/token-log";
+import { getStorage } from "@/lib/storage";
+import { clusterGlobalArticles, type StoryCluster } from "@/lib/synthesize/cluster";
 import { computeDigestWordCount, truncateChars, truncateWords } from "@/lib/text";
 
 const DIGEST_TOOL_NAME = "return_digest";
@@ -20,21 +23,21 @@ a newsletter that replaces their reading — you are filtering and surfacing so 
 read more efficiently. The reader has limited time and high intelligence; treat both 
 as scarce resources.
 
-You will receive four inputs in the user message:
+You will receive five inputs in the user message:
 1. CURATED_CORPUS — all posts from the reader's subscribed newsletters in the last 24h
 2. GLOBAL_CORPUS — top stories from major news sources in the last 24h
-3. DISCOVERY_CORPUS — broader source pool to filter for personalization
-4. CHINA_CORPUS — China-focused general, business, technology, and social-media signals
+3. DISCOVERY_CORPUS — broader source pool to filter for personalization, including China-focused business, technology, and social-media signals
+4. GLOBAL_CORPUS_CLUSTERS — global articles pre-grouped by underlying story
 5. INTEREST_PROFILE — the reader's interests, context, and what to surface or avoid
 
 For CURATED_CORPUS, triage every piece into:
 
-- read_in_full (max 3 per day): piece is so good, dense, or important that any summary 
-  destroys value. Reserve this tier for genuinely exceptional pieces. Most days will 
-  have 0-1 items here, not 3.
+- read_in_full (max 3 per day, target 1-2 when curated material exists): piece is so good, dense, or important that any summary
+  destroys value. The bar is high but not asymptotic — if a piece in the curated corpus has a clear thesis, original framing, or non-obvious analysis, it earns this tier.
 
-- worth_a_glance (5-8 per day): piece has a real insight that compresses to 30-50 
+- worth_a_glance (target 5-8 per day): piece has a real insight that compresses to 30-50
   words without significant loss. Surface the insight with attribution and link.
+  If the curated corpus has 5+ items today, you should normally produce at least 3 worth_a_glance items. The triage is fine-grained, not gatekeeping.
 
 - skip: piece is light, repetitive, off-topic for the reader, or housekeeping. Don't 
   include — just count.
@@ -64,31 +67,20 @@ NEW IN THE LEXICON:
 - Max 5 entries. Empty array if nothing qualifies.
 
 GLOBAL BRIEFING:
-- From GLOBAL_CORPUS, select 5-7 stories with broadest impact today.
+- From GLOBAL_CORPUS_CLUSTERS, select 5-7 clusters with broadest impact today.
+- Each cluster represents one underlying event covered by one or more outlets. Treat one cluster as ONE item.
 - Per item: clear headline + 60-90 word paraphrase + inline source link(s).
-- Prefer synthesizing across 2+ sources when multiple sources cover the same event.
+- Prefer synthesizing across 2+ sources when the cluster has multiple member articles.
 - Use 1 source when only 1 source covers the event; do not force multi-source synthesis by importing unrelated context.
 - Surface conflicts between sources explicitly when present, e.g. "AP reports X; BBC emphasizes Y."
-- Avoid making the section a list of unrelated single-source summaries when cross-source convergence exists.
+- A common failure mode is producing multiple items for the same underlying story when different outlets give it different framings. Do not do this. One cluster = one item, even if the outlets disagree.
 - Every sentence must be supported by at least one URL in that item's sources array.
-- Diversify sources. When GLOBAL_CORPUS contains 4+ source organizations, the final global section should normally use at least 4 distinct source organizations, and no single outlet should dominate.
+- Diversify sources. When GLOBAL_CORPUS_CLUSTERS contain 4+ source organizations, the final global section should normally use at least 4 distinct source organizations, and no single outlet should dominate.
 - Prioritize stories that teach the reader about geopolitics, macroeconomics, markets, technology, institutions, public health, climate, war, migration, elections, trade, regulation, or major corporate strategy.
 - Omit isolated local crime, celebrity lawsuits, routine court cases, oddities, weather incidents, sports recaps, and human-interest pieces unless they clearly reveal a larger system-level trend.
 - A story should answer: "What does this teach a sharp reader about how the world works today?"
 - Dry, factual tone.
 - Do not include single-source rumors or speculation.
-
-CHINA BRIEFING:
-- From CHINA_CORPUS, select 3-5 major China items spanning general news, business/policy, and technology.
-- CHINA_CORPUS may include social-media signals from Weibo, Xiaohongshu, or Douyin via RSSHub.
-- Treat official/state media as valuable signal but not neutral ground truth. Attribute carefully.
-- Treat social-media trends as signals, not confirmed facts. Use them to surface emerging attention, consumer behavior, or tech/culture chatter, and distinguish them from reported news.
-- Synthesize across multiple Chinese-media sources when possible.
-- Use 1 source when only 1 source covers the event; do not add global AI-market comparisons unless the cited source makes them.
-- If one source emphasizes policy framing and another emphasizes market or technology effects, state that difference.
-- Include tech/business items with downstream relevance for HK markets, startups, AI, hardware, platforms, or creative tools.
-- Diversify sources. When CHINA_CORPUS contains 4+ source organizations, the final China section should normally use at least 3 distinct source organizations, with a mix of official/state, business/tech, and social/culture sources when available.
-- Omit routine propaganda, ceremonial diplomacy, isolated crime, celebrity gossip, product listicles, and local-interest stories unless they clearly teach something about policy, markets, platforms, consumer behavior, technology, or culture.
 
 FOR YOU:
 - From DISCOVERY_CORPUS, select 3-5 items that match INTEREST_PROFILE.
@@ -97,11 +89,29 @@ FOR YOU:
 - Only surface clear interest-profile matches. Generic items do not qualify.
 - De-prioritize discovery items that closely overlap with anything in the curated queue.
 - Do not invent quotes or catchy framings. Keep all quoted text out of this section.
+- China-related business, policy, technology, and social-media items belong here when they match the reader's profile and are not globally important enough for Global Briefing.
+
+ATTRIBUTION RENDERING:
+- When referring to a source in body text, use markdown link syntax with the publication name: "[Reuters](url) reports..." or "per [the Guardian](url)."
+- Do not use generic phrases like numbered source labels or "one outlet." Always name the publication.
+- The sources array still contains all URLs for audit and end-of-item link lists.
 
 VOICE:
 - Smart, dry, declarative. Zero hype words.
 - One idea per sentence. No throat-clearing.
 - Closer to The Generalist or Money Stuff than Morning Brew.
+- Avoid press-release prose. Phrases like "raises tens of millions and launches X, a platform gaining traction with..." are PR copy, not analysis.
+- Avoid generic accolades: "groundbreaking," "leading," "innovative," "cutting-edge."
+- The body should explain what happened, why it matters, and what the implication is.
+- Good pattern: "The thing happened. The interesting part is X. The implication is Y."
+- Bad pattern: "Company launches its groundbreaking platform, gaining strong traction with users."
+
+OBSERVABILITY:
+- For every item you emit, populate _reasoning with a brief max-2-sentence explanation of why you selected it.
+- For tier choices, explain why this tier and not another.
+- For global and for_you selection, explain why this story over alternatives.
+- For lexicon entries, explain why the concept is durable rather than a one-off.
+- For every curated article you skip, add an entry to _skip_log with the article_url, source, and specific reason.
 
 OUTPUT:
 Return only valid JSON matching DigestSchema (defined in user message). No preamble.
@@ -119,6 +129,24 @@ export function getSynthesisProviderLabel(): string {
   return `anthropic/${getSynthesisModel()}`;
 }
 
+function extendedThinkingEnabled(): boolean {
+  if (process.env.ENABLE_EXTENDED_THINKING === "true") return true;
+  if (process.env.ENABLE_EXTENDED_THINKING === "false") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
+function estimateTokenCount(text: string): number {
+  return Math.ceil(text.split(/\s+/).filter(Boolean).length * 1.3);
+}
+
+function thinkingMarkdown(response: { content: AnthropicContentBlock[] }): string {
+  return response.content
+    .filter((block) => block.type === "thinking" && block.text)
+    .map((block) => block.text)
+    .join("\n\n---\n\n")
+    .trim();
+}
+
 function compactArticle(article: SourceArticle): SourceArticle {
   const maxChars = Number(process.env.MAX_ARTICLE_CHARS ?? 3500);
   return {
@@ -134,8 +162,7 @@ function compactCorpus(corpus: CorpusBundle): CorpusBundle {
     date: corpus.date,
     curated: corpus.curated.slice(0, maxPerPool).map(compactArticle),
     global: corpus.global.slice(0, maxPerPool).map(compactArticle),
-    discovery: corpus.discovery.slice(0, maxPerPool).map(compactArticle),
-    china: corpus.china.slice(0, maxPerPool).map(compactArticle)
+    discovery: corpus.discovery.slice(0, maxPerPool).map(compactArticle)
   };
 }
 
@@ -153,34 +180,41 @@ DigestSchema:
   themes: Theme[],
   lexicon: LexiconEntry[],
   global: GlobalItem[],
-  china: GlobalItem[],
   for_you: ForYouItem[],
+  _skip_log: { article_url, source, reason }[],
   total_word_count: number
 }
 
-TriageItem: { author, source, url, tier: "read_in_full" | "worth_a_glance", text, estimated_read_minutes? }
-Theme: { name, synthesis, underlying_pieces: [{ author, source, url }] }
-LexiconEntry: { term, definition, introduced_by, source, url }
-GlobalItem: { headline, body, sources: string[] }
-ForYouItem: { headline, body, why_for_you, url, source }
+TriageItem: { author, source, url, tier: "read_in_full" | "worth_a_glance", text, _reasoning, estimated_read_minutes? }
+Theme: { name, synthesis, _reasoning, underlying_pieces: [{ author, source, url }] }
+LexiconEntry: { term, definition, introduced_by, source, url, _reasoning }
+GlobalItem: { headline, body, sources: string[], _reasoning }
+ForYouItem: { headline, body, why_for_you, url, source, _reasoning }
 `;
+}
+
+function compactCluster(cluster: StoryCluster): StoryCluster {
+  return {
+    ...cluster,
+    member_articles: cluster.member_articles.map(compactArticle)
+  };
 }
 
 function buildSynthesisUserMessage(corpus: CorpusBundle, extraInstruction?: string): string {
   const compacted = compactCorpus(corpus);
+  const globalClusters = clusterGlobalArticles(compacted.global).map(compactCluster);
   return JSON.stringify(
     {
       CURATED_CORPUS: compacted.curated,
-      GLOBAL_CORPUS: compacted.global,
+      GLOBAL_CORPUS_CLUSTERS: globalClusters,
       DISCOVERY_CORPUS: compacted.discovery,
-      CHINA_CORPUS: compacted.china,
       INTEREST_PROFILE: interestProfile,
       DIGEST_DATE: corpus.date,
       DIGEST_SCHEMA: schemaNote(),
       STRICT_SHAPE_REQUIREMENTS:
-        "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level china MUST be an array, even when empty. Top-level for_you MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
+        "Top-level reading_queue MUST be an object. Top-level global MUST be an array of 5-7 GlobalItem objects. Top-level for_you MUST be an array, even when empty. Top-level _skip_log MUST be an array, even when empty. total_word_count MUST be a number; it may be approximate because the server recomputes it.",
       QUALITY_REQUIREMENTS:
-        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. If CHINA_CORPUS has at least 5 items, china should normally contain 3-5 major China items. Global items should usually cite 2+ sources when multiple sources cover the same story, but never combine unrelated sources just to reach 2 links. Use at least 4 distinct global source organizations and 3 distinct China source organizations when available. Omit low-value local crime, celebrity, entertainment, sports, oddity, and human-interest stories unless they reveal a major structural trend. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text. Avoid quotation marks and unsupported outside comparisons.",
+        "If DISCOVERY_CORPUS has at least 10 items, for_you should normally contain 3-5 clear matches to the interest profile. Global items should select distinct story clusters; never create multiple global items from one cluster. Cite 2+ sources when cluster coverage overlaps; otherwise cite one source and stay inside it. Use at least 4 distinct global source organizations when available. Omit low-value local crime, celebrity, entertainment, sports, oddity, and human-interest stories unless they reveal a major structural trend. Return empty arrays only when there are truly no credible matches. Do not use internal phrases such as schema repair in user-visible text. Avoid quotation marks and unsupported outside comparisons.",
       extra_instruction: extraInstruction
     },
     null,
@@ -221,7 +255,6 @@ function normalizeDigest(digest: Digest): Digest {
       themes: digest.themes,
       lexicon: digest.lexicon,
       global: digest.global,
-      china: digest.china,
       for_you: digest.for_you
     })
   };
@@ -383,14 +416,14 @@ function coerceDigestCandidate(candidate: unknown, corpus: CorpusBundle): unknow
     }
   }
 
-  draft.china = tryParseJsonString(draft.china);
-  if (!Array.isArray(draft.china)) {
-    draft.china = buildBriefingFallback(corpus.china, 5);
-  }
-
   draft.for_you = tryParseJsonString(draft.for_you);
   if (!Array.isArray(draft.for_you)) {
     draft.for_you = [];
+  }
+
+  draft._skip_log = tryParseJsonString(draft._skip_log);
+  if (!Array.isArray(draft._skip_log)) {
+    draft._skip_log = [];
   }
 
   if (typeof draft.total_word_count !== "number") {
@@ -413,10 +446,6 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
     );
   }
 
-  if (corpus.china.length >= 5 && digest.china.length === 0) {
-    issues.push(`china is empty even though ${corpus.china.length} China-source items were ingested`);
-  }
-
   if (digest.global.filter((item) => item.sources.length >= 2).length === 0) {
     issues.push("global briefing contains no multi-source synthesized items where sources clearly overlap");
   }
@@ -429,15 +458,7 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
     );
   }
 
-  const chinaCorpusSources = new Set(corpus.china.map((article) => article.source));
-  const chinaDigestSources = sourceDiversityForItems(digest.china, corpus.china);
-  if (chinaCorpusSources.size >= 4 && digest.china.length >= 3 && chinaDigestSources.size < 3) {
-    issues.push(
-      `China briefing uses only ${chinaDigestSources.size} source organizations despite ${chinaCorpusSources.size} available`
-    );
-  }
-
-  if (hasLowValueBriefingItem([...digest.global, ...digest.china])) {
+  if (hasLowValueBriefingItem(digest.global)) {
     issues.push("briefing includes low-value local crime, celebrity, entertainment, oddity, or routine legal items");
   }
 
@@ -451,13 +472,18 @@ function qualityRepairInstruction(digest: Digest, corpus: CorpusBundle): string 
 
   return `The previous digest validated structurally but failed product-quality checks: ${issues.join(
     "; "
-  )}. Rebuild the digest from the source corpus. Keep read_in_full selective. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason. Include 5-7 global items, 3-5 China items, and 3-5 for_you items when they clearly match the interest profile. Cluster global stories across sources only when sources cover the same event. Cite 2+ sources when coverage overlaps; otherwise cite one source and stay inside it. Use at least 4 distinct global sources and 3 distinct China sources when available. Omit local crime, celebrity lawsuits, entertainment disputes, sports, oddities, and isolated human-interest items unless they reveal a larger system-level trend. Remove quotation marks and outside comparisons. Target at least 900 words on sparse curated days.`;
+  )}. Rebuild the digest from the source corpus. Keep read_in_full selective but remember the triage is fine-grained, not gatekeeping. If the only curated item is weak, it may be skipped, but write a normal reader-facing skip reason and include it in _skip_log. Include 5-7 global items and 3-5 for_you items when they clearly match the interest profile. Cluster global stories across sources only when sources cover the same event. Cite 2+ sources when coverage overlaps; otherwise cite one source and stay inside it. Use at least 4 distinct global sources when available. Omit local crime, celebrity lawsuits, entertainment disputes, sports, oddities, and isolated human-interest items unless they reveal a larger system-level trend. Remove quotation marks and outside comparisons. Target at least 900 words on sparse curated days.`;
 }
 
 async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: string): Promise<Digest> {
+  const t0 = Date.now();
+  const thinkingEnabled = extendedThinkingEnabled();
   const response = await getAnthropic().messages.create({
     model: getSynthesisModel(),
-    max_tokens: 8000,
+    max_tokens: thinkingEnabled ? 16000 : 8000,
+    ...(thinkingEnabled
+      ? { thinking: { type: "enabled" as const, budget_tokens: Number(process.env.EXTENDED_THINKING_BUDGET ?? 8000) } }
+      : {}),
     system: SYNTHESIS_SYSTEM_PROMPT,
     tools: [
       {
@@ -473,10 +499,42 @@ async function callClaudeForDigest(corpus: CorpusBundle, extraInstruction?: stri
         content: buildSynthesisUserMessage(corpus, extraInstruction)
       }
     ]
+  } as Parameters<ReturnType<typeof getAnthropic>["messages"]["create"]>[0]);
+
+  const responseWithUsage = response as typeof response & {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+    _request_id?: string;
+  };
+  const thinking = thinkingMarkdown(response as { content: AnthropicContentBlock[] });
+  await logLLMCall(corpus.date, {
+    stage: "synthesis",
+    model: getSynthesisModel(),
+    input_tokens: responseWithUsage.usage?.input_tokens ?? 0,
+    output_tokens: responseWithUsage.usage?.output_tokens ?? 0,
+    thinking_tokens: thinking ? estimateTokenCount(thinking) : 0,
+    cached_tokens:
+      (responseWithUsage.usage?.cache_creation_input_tokens ?? 0) +
+      (responseWithUsage.usage?.cache_read_input_tokens ?? 0),
+    duration_ms: Date.now() - t0,
+    request_id: responseWithUsage._request_id
   });
 
-  const parsed = coerceDigestCandidate(extractStructuredOutput(response, DIGEST_TOOL_NAME), corpus);
-  return DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
+  if (thinking) {
+    await getStorage().saveRunArtifact(corpus.date, "synthesis-thinking.md", thinking);
+  }
+
+  const parsed = coerceDigestCandidate(
+    extractStructuredOutput(response as { content: AnthropicContentBlock[]; stop_reason?: string | null }, DIGEST_TOOL_NAME),
+    corpus
+  );
+  const digest = DigestSchema.parse(normalizeDigest(DigestSchema.parse(parsed)));
+  await getStorage().saveRunArtifact(corpus.date, "synthesis-output.json", digest);
+  return digest;
 }
 
 export async function synthesize(corpus: CorpusBundle): Promise<Digest> {
@@ -495,12 +553,12 @@ export async function synthesize(corpus: CorpusBundle): Promise<Digest> {
       corpus,
       `The previous response failed schema validation with: ${
         firstError instanceof Error ? firstError.message : String(firstError)
-      }. Correct the STRUCTURE, not just wording. Return a tool input where global is an array, china is an array, for_you is an array, and total_word_count is a number.`
+      }. Correct the STRUCTURE, not just wording. Return a tool input where global is an array, for_you is an array, _skip_log is an array, and total_word_count is a number.`
     );
   } catch (secondError) {
     return await callClaudeForDigest(
       corpus,
-      `The last two responses failed validation. This is a strict repair attempt. Required: global must be an array of 5-7 objects with headline/body/sources; china must be an array; for_you must be an array; total_word_count must be a number. Errors: ${
+      `The last two responses failed validation. This is a strict repair attempt. Required: global must be an array of 5-7 objects with headline/body/sources; for_you must be an array; _skip_log must be an array; total_word_count must be a number. Errors: ${
         secondError instanceof Error ? secondError.message : String(secondError)
       }`
     );

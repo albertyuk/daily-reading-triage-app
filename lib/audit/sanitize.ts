@@ -120,7 +120,7 @@ function diversifyArticles(articles: SourceArticle[], limit: number): SourceArti
 }
 
 function usedBriefingUrls(digest: Digest): Set<string> {
-  return new Set([...digest.global, ...digest.china].flatMap((item) => item.sources));
+  return new Set(digest.global.flatMap((item) => item.sources));
 }
 
 function fillBriefingItems(
@@ -142,8 +142,8 @@ function fillBriefingItems(
     themes: [],
     lexicon: [],
     global: items,
-    china: [],
     for_you: [],
+    _skip_log: [],
     total_word_count: 0
   });
   const candidates = corpus
@@ -163,7 +163,6 @@ function normalizeDigestWordCount(digest: Digest): Digest {
       themes: digest.themes,
       lexicon: digest.lexicon,
       global: digest.global,
-      china: digest.china,
       for_you: digest.for_you
     })
   };
@@ -180,9 +179,6 @@ export function sanitizeAuditReportForPublication(
 
   digest.global = digest.global.filter(
     (item) => !failures.some((issue) => sectionMatches(issue, "global") && issueMatchesItem(issue, item))
-  );
-  digest.china = digest.china.filter(
-    (item) => !failures.some((issue) => sectionMatches(issue, "china") && issueMatchesItem(issue, item))
   );
   digest.for_you = digest.for_you.filter(
     (item) => !failures.some((issue) => sectionMatches(issue, "for_you") && issueMatchesItem(issue, item))
@@ -206,15 +202,6 @@ export function sanitizeAuditReportForPublication(
     5,
     7
   );
-
-  if (audit.cleaned_digest.china.length >= 3) {
-    digest.china = fillBriefingItems(
-      digest.china,
-      corpus.filter((article) => article.source_pool === "china"),
-      Math.min(3, corpus.filter((article) => article.source_pool === "china").length),
-      6
-    );
-  }
 
   const convertedFailures: VerificationIssue[] = failures.map((issue) => ({
     section: "audit",

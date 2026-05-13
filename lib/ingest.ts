@@ -3,10 +3,11 @@ import { JSDOM } from "jsdom";
 import Parser from "rss-parser";
 import { getStorage } from "@/lib/storage";
 import { allSources, sourcePools, type SourceConfig } from "@/lib/sources";
-import { getETDateWindow, isWithinETDate } from "@/lib/dates";
+import { getETDateWindow, isWithinETDate, isWithinETLookback } from "@/lib/dates";
 import { SourceArticleSchema, type CorpusBundle, type SourceArticle, type SourcePool } from "@/lib/schema";
 import { wordCount } from "@/lib/text";
 import { canonicalizeUrl, isHttpUrl, stableArticleId } from "@/lib/urls";
+import type { SourceHealth } from "@/lib/observability/run-summary";
 
 const parser = new Parser({
   timeout: 20000,
@@ -85,7 +86,15 @@ async function articleFromRssItem(item: RssItem, source: SourceConfig, date: str
   if (!isHttpUrl(url)) return null;
 
   const publishedAt = getItemDate(item);
-  if (!publishedAt || !isWithinETDate(publishedAt, date)) return null;
+  const lookbackHours = source.pool === "curated" ? Number(process.env.CURATED_LOOKBACK_HOURS ?? 72) : 24;
+  if (
+    !publishedAt ||
+    !(source.pool === "curated"
+      ? isWithinETLookback(publishedAt, date, lookbackHours)
+      : isWithinETDate(publishedAt, date))
+  ) {
+    return null;
+  }
 
   const fallbackBody = cleanText(
     [item.contentSnippet, item.content, item.summary, source.feedContentOnly ? item.title : ""]
@@ -297,26 +306,61 @@ export function dedupeArticles(articles: SourceArticle[]): SourceArticle[] {
   return deduped.sort((a, b) => b.published_at.localeCompare(a.published_at));
 }
 
-async function ingestPool(pool: SourcePool, date: string): Promise<SourceArticle[]> {
+type PoolIngestResult = {
+  articles: SourceArticle[];
+  health: SourceHealth[];
+};
+
+async function ingestPool(pool: SourcePool, date: string): Promise<PoolIngestResult> {
   const settled = await Promise.allSettled(sourcePools[pool].map((source) => ingestSource(source, date)));
+  const health: SourceHealth[] = [];
   const sourceArticles = settled.flatMap((result, index) => {
-    if (result.status === "fulfilled") return result.value;
+    const source = sourcePools[pool][index];
+    if (result.status === "fulfilled") {
+      health.push({
+        source: source.name,
+        pool,
+        status: source.disabled ? "disabled" : result.value.length > 0 ? "ok" : "empty",
+        items_fetched: result.value.length,
+        items_in_window: result.value.length,
+        issue: source.disabled ? "Source disabled or expected via email forwarding." : undefined,
+        last_successful_fetch_at: result.value.length > 0 ? new Date().toISOString() : undefined
+      });
+      return result.value;
+    }
+    health.push({
+      source: source.name,
+      pool,
+      status: "error",
+      items_fetched: 0,
+      items_in_window: 0,
+      issue: result.reason instanceof Error ? result.reason.message : String(result.reason)
+    });
     console.warn(`Skipping ${sourcePools[pool][index].name}:`, result.reason);
     return [];
   });
-  return dedupeArticles(sourceArticles);
+  return { articles: dedupeArticles(sourceArticles), health };
 }
 
 export async function ingestAll(date: string): Promise<CorpusBundle> {
-  const [curated, global, discovery, china] = await Promise.all([
+  const [curated, global, discovery] = await Promise.all([
     ingestPool("curated", date),
     ingestPool("global", date),
-    ingestPool("discovery", date),
-    ingestPool("china", date)
+    ingestPool("discovery", date)
   ]);
 
-  const corpus = { date, curated, global, discovery, china };
+  const corpus = {
+    date,
+    curated: curated.articles,
+    global: global.articles,
+    discovery: discovery.articles
+  };
   await getStorage().saveRawCorpus(date, corpus);
+  await getStorage().saveRunArtifact(date, "source-health.json", [
+    ...curated.health,
+    ...global.health,
+    ...discovery.health
+  ]);
   return corpus;
 }
 

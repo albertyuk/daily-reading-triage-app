@@ -19,9 +19,14 @@ export type StorageAdapter = {
   appendLexicon(entries: LexiconEntry[]): Promise<void>;
   getMarker(key: string): Promise<string | null>;
   setMarker(key: string, value: string): Promise<void>;
+  clearRunEntries(date: string, name: string): Promise<void>;
+  appendRunEntry(date: string, name: string, entry: unknown): Promise<void>;
+  saveRunArtifact(date: string, name: string, value: unknown): Promise<void>;
+  getRunArtifact<T = unknown>(date: string, name: string): Promise<T | null>;
 };
 
 const DATA_DIR = path.join(process.cwd(), "data");
+const RUNS_DIR = path.join(DATA_DIR, "runs");
 
 async function ensureDataDir() {
   await mkdir(DATA_DIR, { recursive: true });
@@ -40,6 +45,24 @@ async function readJsonFile<T>(filename: string, schema: { parse(value: unknown)
 async function writeJsonFile(filename: string, value: unknown) {
   await ensureDataDir();
   await writeFile(path.join(DATA_DIR, filename), `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function ensureRunDir(date: string) {
+  await mkdir(path.join(RUNS_DIR, date), { recursive: true });
+}
+
+async function readRunEntries(date: string, name: string): Promise<unknown[]> {
+  try {
+    const raw = await readFile(path.join(RUNS_DIR, date, `${name}.jsonl`), "utf8");
+    return raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 const localStorage: StorageAdapter = {
@@ -103,6 +126,42 @@ const localStorage: StorageAdapter = {
     const markers = (await readJsonFile("markers.json", schema)) ?? {};
     markers[key] = value;
     await writeJsonFile("markers.json", markers);
+  },
+
+  async appendRunEntry(date, name, entry) {
+    await ensureRunDir(date);
+    await writeFile(path.join(RUNS_DIR, date, `${name}.jsonl`), `${JSON.stringify(entry)}\n`, {
+      encoding: "utf8",
+      flag: "a"
+    });
+  },
+
+  async clearRunEntries(date, name) {
+    await ensureRunDir(date);
+    await writeFile(path.join(RUNS_DIR, date, `${name}.jsonl`), "", "utf8");
+  },
+
+  async saveRunArtifact(date, name, value) {
+    await ensureRunDir(date);
+    await writeFile(
+      path.join(RUNS_DIR, date, name),
+      typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`,
+      "utf8"
+    );
+  },
+
+  async getRunArtifact(date, name) {
+    try {
+      if (name.endsWith(".jsonl")) {
+        return (await readRunEntries(date, name.replace(/\.jsonl$/, ""))) as never;
+      }
+      const raw = await readFile(path.join(RUNS_DIR, date, name), "utf8");
+      if (name.endsWith(".json")) return JSON.parse(raw);
+      return raw as never;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
   }
 };
 
@@ -170,6 +229,28 @@ const kvStorage: StorageAdapter = {
   async setMarker(key, value) {
     const kv = await getKv();
     await kv.set(`marker:${key}`, value);
+  },
+
+  async appendRunEntry(date, name, entry) {
+    const kv = await getKv();
+    const key = `run:${date}:${name}.jsonl`;
+    const existing = await kv.get<unknown[]>(key);
+    await kv.set(key, [...(Array.isArray(existing) ? existing : []), entry]);
+  },
+
+  async clearRunEntries(date, name) {
+    const kv = await getKv();
+    await kv.set(`run:${date}:${name}.jsonl`, []);
+  },
+
+  async saveRunArtifact(date, name, value) {
+    const kv = await getKv();
+    await kv.set(`run:${date}:${name}`, value);
+  },
+
+  async getRunArtifact(date, name) {
+    const kv = await getKv();
+    return kv.get(`run:${date}:${name}`);
   }
 };
 
