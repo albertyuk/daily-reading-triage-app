@@ -3,6 +3,7 @@ import { getStorage } from "@/lib/storage";
 
 export type ArticleDecision = {
   article_url: string;
+  article_title: string;
   source_name: string;
   source_pool: SourcePool;
   published_at: string;
@@ -44,6 +45,7 @@ export function buildArticleDecisions(
   for (const article of corpus) {
     decisions.set(article.url, {
       article_url: article.url,
+      article_title: article.title,
       source_name: article.source,
       source_pool: article.source_pool,
       published_at: article.published_at,

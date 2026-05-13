@@ -14,7 +14,7 @@ export function ArticleDecisionTable({ decisions }: { decisions: ArticleDecision
       .filter((item) => (decision === "all" ? true : item.synthesis_decision === decision))
       .filter((item) =>
         q
-          ? `${item.article_url} ${item.source_name} ${item.source_pool} ${item.synthesis_decision} ${item.synthesis_reasoning}`
+          ? `${item.article_title} ${item.article_url} ${item.source_name} ${item.source_pool} ${item.synthesis_decision} ${item.synthesis_reasoning}`
               .toLowerCase()
               .includes(q)
           : true
@@ -63,7 +63,7 @@ export function ArticleDecisionTable({ decisions }: { decisions: ArticleDecision
           <div key={item.article_url} className="border-b border-rule p-3 last:border-b-0">
             <p className="m-0">
               <a href={item.article_url} target="_blank" rel="noreferrer" className="font-semibold">
-                {item.article_url}
+                {item.article_title ?? item.article_url}
               </a>
             </p>
             <p className="m-0 text-xs uppercase tracking-[0.08em] text-muted">

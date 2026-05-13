@@ -23,12 +23,11 @@ a newsletter that replaces their reading — you are filtering and surfacing so 
 read more efficiently. The reader has limited time and high intelligence; treat both 
 as scarce resources.
 
-You will receive five inputs in the user message:
+You will receive four inputs in the user message:
 1. CURATED_CORPUS — all posts from the reader's subscribed newsletters in the last 24h
-2. GLOBAL_CORPUS — top stories from major news sources in the last 24h
+2. GLOBAL_CORPUS_CLUSTERS — global articles pre-grouped by underlying story
 3. DISCOVERY_CORPUS — broader source pool to filter for personalization, including China-focused business, technology, and social-media signals
-4. GLOBAL_CORPUS_CLUSTERS — global articles pre-grouped by underlying story
-5. INTEREST_PROFILE — the reader's interests, context, and what to surface or avoid
+4. INTEREST_PROFILE — the reader's interests, context, and what to surface or avoid
 
 For CURATED_CORPUS, triage every piece into:
 
